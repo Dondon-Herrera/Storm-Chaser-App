@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
@@ -14,6 +14,7 @@ export default function WeatherScreen() {
   const [weather, setWeather] = useState<WeatherData | null>(null);
   const [status, setStatus] = useState<LoadState>('loading');
   const [message, setMessage] = useState('Checking location and weather data…');
+  const [refreshing, setRefreshing] = useState(false);
   const safeAreaInsets = useSafeAreaInsets();
   const insets = {
     top: safeAreaInsets.top,
@@ -26,6 +27,7 @@ export default function WeatherScreen() {
   }, []);
 
   async function refreshWeather() {
+    setRefreshing(true);
     setStatus('loading');
     setMessage('Checking location and weather data…');
 
@@ -51,6 +53,8 @@ export default function WeatherScreen() {
       console.error(error);
       setStatus('error');
       setMessage('Weather information could not be retrieved. Try again later.');
+    } finally {
+      setRefreshing(false);
     }
   }
 
@@ -127,10 +131,37 @@ export default function WeatherScreen() {
     );
   };
 
+  const renderForecastSection = () => {
+    if (!weather?.forecast?.length || status !== 'ready') {
+      return null;
+    }
+
+    return (
+      <ThemedView type="backgroundElement" style={styles.forecastCard}>
+        <ThemedText type="smallBold">5-day forecast</ThemedText>
+        <View style={styles.forecastGrid}>
+          {weather.forecast.slice(0, 5).map((day) => (
+            <ThemedView key={day.date} type="backgroundElement" style={styles.forecastDay}>
+              <ThemedText type="smallBold">{new Date(day.date).toLocaleDateString(undefined, { weekday: 'short' })}</ThemedText>
+              <ThemedText type="small" themeColor="textSecondary">
+                {day.weatherDescription}
+              </ThemedText>
+              <ThemedText type="default">
+                {day.minTemperature.toFixed(0)}° / {day.maxTemperature.toFixed(0)}°
+              </ThemedText>
+              <ThemedText type="small">Rain {day.precipitationProbability ?? 0}%</ThemedText>
+            </ThemedView>
+          ))}
+        </View>
+      </ThemedView>
+    );
+  };
+
   return (
     <ScrollView
       style={[styles.scrollView, { backgroundColor: theme.background }]}
       contentInset={insets}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refreshWeather} tintColor={theme.text} />}
       contentContainerStyle={[styles.contentContainer, { paddingTop: insets.top }]}
     >
       <ThemedView style={styles.wrapper}>
@@ -143,6 +174,7 @@ export default function WeatherScreen() {
 
         {renderStatusBanner()}
         {renderWeatherSection()}
+        {renderForecastSection()}
       </ThemedView>
     </ScrollView>
   );
@@ -214,5 +246,23 @@ const styles = StyleSheet.create({
   },
   temperatureText: {
     marginTop: Spacing.one,
+  },
+  forecastCard: {
+    gap: Spacing.three,
+    padding: Spacing.four,
+    borderRadius: Spacing.four,
+  },
+  forecastGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Spacing.three,
+    justifyContent: 'space-between',
+  },
+  forecastDay: {
+    width: '48%',
+    gap: Spacing.one,
+    padding: Spacing.three,
+    borderRadius: Spacing.four,
+    backgroundColor: 'rgba(255,255,255,0.04)',
   },
 });

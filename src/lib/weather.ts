@@ -1,5 +1,14 @@
 import * as Location from 'expo-location';
 
+export type ForecastDay = {
+    date: string;
+    maxTemperature: number;
+    minTemperature: number;
+    precipitationProbability: number | null;
+    weatherCode: number;
+    weatherDescription: string;
+};
+
 export type WeatherData = {
     temperature: number;
     windSpeed: number;
@@ -9,6 +18,7 @@ export type WeatherData = {
     time: string;
     latitude: number;
     longitude: number;
+    forecast: ForecastDay[];
 };
 
 const OPEN_METEO_URL = 'https://api.open-meteo.com/v1/forecast';
@@ -62,7 +72,7 @@ export async function fetchWeatherData(latitude: number, longitude: number): Pro
         latitude: String(latitude),
         longitude: String(longitude),
         current_weather: 'true',
-        hourly: 'precipitation_probability',
+        daily: 'temperature_2m_max,temperature_2m_min,precipitation_probability_max,weathercode',
         timezone: 'auto',
     });
 
@@ -73,26 +83,32 @@ export async function fetchWeatherData(latitude: number, longitude: number): Pro
 
     const data = await response.json();
     const current = data.current_weather;
-    const hourly = data.hourly;
+    const daily = data.daily;
 
-    if (!current || !hourly) {
+    if (!current || !daily) {
         throw new Error('Unexpected weather response');
     }
 
-    const timeIndex = hourly.time?.indexOf(current.time);
-    const precipitationProbability =
-        typeof timeIndex === 'number' && timeIndex >= 0
-            ? hourly.precipitation_probability?.[timeIndex] ?? null
-            : null;
+    const forecast = Array.isArray(daily.time)
+        ? daily.time.map((date: string, index: number) => ({
+            date,
+            maxTemperature: daily.temperature_2m_max?.[index] ?? 0,
+            minTemperature: daily.temperature_2m_min?.[index] ?? 0,
+            precipitationProbability: daily.precipitation_probability_max?.[index] ?? null,
+            weatherCode: daily.weathercode?.[index] ?? current.weathercode,
+            weatherDescription: getWeatherDescription(daily.weathercode?.[index] ?? current.weathercode),
+        }))
+        : [];
 
     return {
         temperature: current.temperature,
         windSpeed: current.windspeed,
-        precipitationProbability,
+        precipitationProbability: null,
         weatherCode: current.weathercode,
         weatherDescription: getWeatherDescription(current.weathercode),
         time: current.time,
         latitude: data.latitude,
         longitude: data.longitude,
+        forecast,
     };
 }

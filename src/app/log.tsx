@@ -1,4 +1,3 @@
-import { useIsFocused } from '@react-navigation/native';
 import { Image } from 'expo-image';
 import { Link, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
@@ -15,7 +14,6 @@ export default function StormLogScreen() {
     const [reports, setReports] = useState<StormReport[]>([]);
     const [loading, setLoading] = useState(true);
     const router = useRouter();
-    const isFocused = useIsFocused();
     const safeAreaInsets = useSafeAreaInsets();
     const insets = {
         ...safeAreaInsets,
@@ -24,10 +22,8 @@ export default function StormLogScreen() {
     const theme = useTheme();
 
     useEffect(() => {
-        if (isFocused) {
-            loadReports();
-        }
-    }, [isFocused]);
+        loadReports();
+    }, []);
 
     async function loadReports() {
         setLoading(true);
@@ -177,6 +173,9 @@ const styles = StyleSheet.create({
     },
     detailLink: {
         paddingVertical: Spacing.two,
+    },
+    buttonPressed: {
+        opacity: 0.75,
     },
     placeholderImage: {
         width: '100%',

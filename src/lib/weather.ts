@@ -62,7 +62,7 @@ function getWeatherDescription(code: number) {
 
 export async function requestLocationPermissions() {
     const permission = await Location.requestForegroundPermissionsAsync();
-    return permission.status === Location.PermissionStatus.Granted;
+    return permission.status === Location.PermissionStatus.GRANTED;
 }
 
 export async function getCurrentLocation() {

@@ -1,7 +1,7 @@
 import { Image } from 'expo-image';
-import { Link, useRouter, useSearchParams } from 'expo-router';
+import { Link, useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet } from 'react-native';
+import { Alert, Linking, Pressable, ScrollView, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
@@ -11,7 +11,7 @@ import { useTheme } from '@/hooks/use-theme';
 import { deleteStormReport, getStormReportById, type StormReport } from '@/lib/storage';
 
 export default function StormReportDetailScreen() {
-    const { id } = useSearchParams();
+    const { id } = useLocalSearchParams();
     const [report, setReport] = useState<StormReport | null>(null);
     const [loading, setLoading] = useState(true);
     const safeAreaInsets = useSafeAreaInsets();
@@ -45,7 +45,8 @@ export default function StormReportDetailScreen() {
     }
 
     async function handleDeleteReport() {
-        if (!report?.id) {
+        const reportId = report?.id;
+        if (reportId == null) {
             return;
         }
 
@@ -56,7 +57,7 @@ export default function StormReportDetailScreen() {
                 style: 'destructive',
                 onPress: async () => {
                     try {
-                        await deleteStormReport(report.id);
+                        await deleteStormReport(reportId);
                         router.push('/log');
                     } catch (error) {
                         console.error(error);
@@ -121,9 +122,9 @@ export default function StormReportDetailScreen() {
                             <ThemedText type="link">Return to log</ThemedText>
                         </Link>
                         {mapUrl ? (
-                            <Link href={mapUrl} style={styles.detailLink} target="_blank">
+                            <Pressable onPress={() => Linking.openURL(mapUrl)} style={styles.detailLink}>
                                 <ThemedText type="link">Open in maps</ThemedText>
-                            </Link>
+                            </Pressable>
                         ) : null}
                         <Pressable
                             style={({ pressed }) => [styles.deleteButton, pressed && styles.buttonPressed]}
@@ -192,5 +193,8 @@ const styles = StyleSheet.create({
     },
     deleteText: {
         color: '#e63946',
+    },
+    buttonPressed: {
+        opacity: 0.75,
     },
 });

@@ -1,6 +1,7 @@
+import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, TextInput } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, TextInput } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';

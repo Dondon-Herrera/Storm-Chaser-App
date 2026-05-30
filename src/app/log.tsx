@@ -1,6 +1,6 @@
 import { useIsFocused } from '@react-navigation/native';
 import { Image } from 'expo-image';
-import { useRouter } from 'expo-router';
+import { Link, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -91,9 +91,14 @@ export default function StormLogScreen() {
                             <ThemedText type="small">{report.weatherCondition}</ThemedText>
                             <ThemedText type="small">Location: {report.latitude.toFixed(2)}, {report.longitude.toFixed(2)}</ThemedText>
                             <Image source={{ uri: report.photoUri }} style={styles.previewImage} contentFit="cover" />
-                            <Link href="/log/new">
-                                <ThemedText type="link">Add another report</ThemedText>
-                            </Link>
+                            <View style={styles.reportActions}>
+                                <Link href={`/log/${report.id}`} style={styles.detailLink}>
+                                    <ThemedText type="link">View details</ThemedText>
+                                </Link>
+                                <Link href="/log/new" style={styles.detailLink}>
+                                    <ThemedText type="link">Add another report</ThemedText>
+                                </Link>
+                            </View>
                         </ThemedView>
                     ))
                 )}
@@ -165,6 +170,13 @@ const styles = StyleSheet.create({
         width: '100%',
         aspectRatio: 16 / 9,
         borderRadius: Spacing.four,
+    },
+    reportActions: {
+        flexDirection: 'row',
+        gap: Spacing.three,
+    },
+    detailLink: {
+        paddingVertical: Spacing.two,
     },
     placeholderImage: {
         width: '100%',

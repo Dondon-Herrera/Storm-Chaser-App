@@ -139,3 +139,8 @@ export async function getStormReportById(id: number): Promise<StormReport | null
 
     return result.rows.item(0);
 }
+
+export async function deleteStormReport(id: number) {
+    await initDb();
+    await executeSql(`DELETE FROM storm_reports WHERE id = ?;`, [id]);
+}

@@ -1,3 +1,4 @@
+import { useIsFocused } from '@react-navigation/native';
 import { Image } from 'expo-image';
 import { Link } from 'expo-router';
 import { useEffect, useState } from 'react';
@@ -30,6 +31,7 @@ function getStaticMapUrl(reports: StormReport[]) {
 export default function MapScreen() {
     const [reports, setReports] = useState<StormReport[]>([]);
     const [loading, setLoading] = useState(true);
+    const isFocused = useIsFocused();
     const safeAreaInsets = useSafeAreaInsets();
     const insets = {
         ...safeAreaInsets,
@@ -38,8 +40,10 @@ export default function MapScreen() {
     const theme = useTheme();
 
     useEffect(() => {
-        loadReports();
-    }, []);
+        if (isFocused) {
+            loadReports();
+        }
+    }, [isFocused]);
 
     async function loadReports() {
         setLoading(true);

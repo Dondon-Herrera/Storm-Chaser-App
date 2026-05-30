@@ -1,14 +1,14 @@
 import { Image } from 'expo-image';
-import { Link, useSearchParams } from 'expo-router';
+import { Link, useRouter, useSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { ScrollView, StyleSheet } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
-import { getStormReportById, type StormReport } from '@/lib/storage';
+import { deleteStormReport, getStormReportById, type StormReport } from '@/lib/storage';
 
 export default function StormReportDetailScreen() {
     const { id } = useSearchParams();
@@ -20,6 +20,7 @@ export default function StormReportDetailScreen() {
         bottom: safeAreaInsets.bottom + BottomTabInset + Spacing.three,
     };
     const theme = useTheme();
+    const router = useRouter();
 
     useEffect(() => {
         if (typeof id === 'string') {
@@ -41,6 +42,28 @@ export default function StormReportDetailScreen() {
         } finally {
             setLoading(false);
         }
+    }
+
+    async function handleDeleteReport() {
+        if (!report?.id) {
+            return;
+        }
+
+        Alert.alert('Delete report', 'Are you sure you want to remove this storm report?', [
+            { text: 'Cancel', style: 'cancel' },
+            {
+                text: 'Delete',
+                style: 'destructive',
+                onPress: async () => {
+                    try {
+                        await deleteStormReport(report.id);
+                        router.push('/log');
+                    } catch (error) {
+                        console.error(error);
+                    }
+                },
+            },
+        ]);
     }
 
     const mapUrl = report
@@ -102,6 +125,14 @@ export default function StormReportDetailScreen() {
                                 <ThemedText type="link">Open in maps</ThemedText>
                             </Link>
                         ) : null}
+                        <Pressable
+                            style={({ pressed }) => [styles.deleteButton, pressed && styles.buttonPressed]}
+                            onPress={handleDeleteReport}
+                        >
+                            <ThemedText type="link" style={styles.deleteText}>
+                                Delete report
+                            </ThemedText>
+                        </Pressable>
                     </ThemedView>
                 ) : (
                     <ThemedView type="backgroundElement" style={styles.card}>
@@ -155,5 +186,11 @@ const styles = StyleSheet.create({
     },
     detailLink: {
         paddingVertical: Spacing.two,
+    },
+    deleteButton: {
+        paddingVertical: Spacing.two,
+    },
+    deleteText: {
+        color: '#e63946',
     },
 });

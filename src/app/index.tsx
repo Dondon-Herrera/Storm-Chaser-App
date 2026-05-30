@@ -71,7 +71,7 @@ export default function WeatherScreen() {
     if (status === 'not-found' || status === 'error') {
       return (
         <ThemedView type="backgroundElement" style={styles.statusCard}>
-          <ThemedText type="strong">Weather not found</ThemedText>
+          <ThemedText type="smallBold">Weather not found</ThemedText>
           <ThemedText type="small" themeColor="textSecondary" style={styles.cardText}>
             {message}
           </ThemedText>

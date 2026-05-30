@@ -1,19 +1,45 @@
+import { useIsFocused } from '@react-navigation/native';
 import { Image } from 'expo-image';
-import { Platform, Pressable, ScrollView, StyleSheet } from 'react-native';
+import { useRouter } from 'expo-router';
+import { useEffect, useState } from 'react';
+import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
+import { getStormReports, type StormReport } from '@/lib/storage';
 
 export default function StormLogScreen() {
+    const [reports, setReports] = useState<StormReport[]>([]);
+    const [loading, setLoading] = useState(true);
+    const router = useRouter();
+    const isFocused = useIsFocused();
     const safeAreaInsets = useSafeAreaInsets();
     const insets = {
         ...safeAreaInsets,
         bottom: safeAreaInsets.bottom + BottomTabInset + Spacing.three,
     };
     const theme = useTheme();
+
+    useEffect(() => {
+        if (isFocused) {
+            loadReports();
+        }
+    }, [isFocused]);
+
+    async function loadReports() {
+        setLoading(true);
+        try {
+            const saved = await getStormReports();
+            setReports(saved);
+        } catch (error) {
+            console.error(error);
+        } finally {
+            setLoading(false);
+        }
+    }
 
     return (
         <ScrollView
@@ -26,24 +52,53 @@ export default function StormLogScreen() {
                     Storm Log
                 </ThemedText>
                 <ThemedText type="subtitle" themeColor="textSecondary" style={styles.subtitle}>
-                    Capture storm observations, photos, and notes in one place.
+                    Document storm activity with photos, notes, and location metadata.
                 </ThemedText>
 
-                <ThemedView type="backgroundElement" style={styles.badge}>
-                    <ThemedText type="smallBold">Ready for your first storm report</ThemedText>
-                </ThemedView>
+                <Pressable
+                    style={({ pressed }) => [styles.newButton, pressed && styles.buttonPressed]}
+                    onPress={() => router.push('/log/new')}
+                >
+                    <ThemedText type="link">Create new report</ThemedText>
+                </Pressable>
 
-                <ThemedView type="backgroundElement" style={styles.reportCard}>
-                    <ThemedText type="strong">No reports yet</ThemedText>
-                    <ThemedText type="small" themeColor="textSecondary" style={styles.cardText}>
-                        When you document storms, entries will appear here with location, weather, and notes.
-                    </ThemedText>
-                    <Pressable style={({ pressed }) => [styles.button, pressed && styles.buttonPressed]}>
-                        <ThemedText type="link">Start documenting</ThemedText>
-                    </Pressable>
-                </ThemedView>
+                {loading ? (
+                    <ThemedView type="backgroundElement" style={styles.statusCard}>
+                        <ActivityIndicator color={theme.text} />
+                        <ThemedText type="small" themeColor="textSecondary" style={styles.loadingText}>
+                            Loading reports…
+                        </ThemedText>
+                    </ThemedView>
+                ) : reports.length === 0 ? (
+                    <ThemedView type="backgroundElement" style={styles.reportCard}>
+                        <ThemedText type="smallBold">No reports yet</ThemedText>
+                        <ThemedText type="small" themeColor="textSecondary" style={styles.cardText}>
+                            When you document storms, saved entries will appear here with a quick summary.
+                        </ThemedText>
+                        <Link href="/log/new">
+                            <ThemedText type="link">Start documenting</ThemedText>
+                        </Link>
+                    </ThemedView>
+                ) : (
+                    reports.map((report) => (
+                        <ThemedView key={report.id?.toString() ?? report.dateTime} type="backgroundElement" style={styles.reportCard}>
+                            <View style={styles.reportHeader}>
+                                <ThemedText type="smallBold">{report.stormType}</ThemedText>
+                                <ThemedText type="small" themeColor="textSecondary">
+                                    {new Date(report.dateTime).toLocaleString()}
+                                </ThemedText>
+                            </View>
+                            <ThemedText type="small">{report.weatherCondition}</ThemedText>
+                            <ThemedText type="small">Location: {report.latitude.toFixed(2)}, {report.longitude.toFixed(2)}</ThemedText>
+                            <Image source={{ uri: report.photoUri }} style={styles.previewImage} contentFit="cover" />
+                            <Link href="/log/new">
+                                <ThemedText type="link">Add another report</ThemedText>
+                            </Link>
+                        </ThemedView>
+                    ))
+                )}
 
-                {Platform.OS === 'web' && (
+                {reports.length === 0 && Platform.OS === 'web' && (
                     <Image
                         source={require('@/assets/images/tutorial-web.png')}
                         style={styles.placeholderImage}
@@ -76,11 +131,23 @@ const styles = StyleSheet.create({
     subtitle: {
         maxWidth: 560,
     },
-    badge: {
+    newButton: {
         alignSelf: 'flex-start',
-        paddingHorizontal: Spacing.four,
-        paddingVertical: Spacing.two,
         borderRadius: Spacing.five,
+    },
+    linkButton: {
+        paddingHorizontal: Spacing.four,
+        paddingVertical: Spacing.three,
+    },
+    statusCard: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: Spacing.two,
+        padding: Spacing.four,
+        borderRadius: Spacing.four,
+    },
+    loadingText: {
+        marginLeft: Spacing.two,
     },
     reportCard: {
         gap: Spacing.three,
@@ -90,14 +157,14 @@ const styles = StyleSheet.create({
     cardText: {
         marginTop: Spacing.one,
     },
-    button: {
-        alignSelf: 'flex-start',
-        paddingHorizontal: Spacing.four,
-        paddingVertical: Spacing.three,
-        borderRadius: Spacing.five,
+    reportHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
     },
-    buttonPressed: {
-        opacity: 0.75,
+    previewImage: {
+        width: '100%',
+        aspectRatio: 16 / 9,
+        borderRadius: Spacing.four,
     },
     placeholderImage: {
         width: '100%',

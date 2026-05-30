@@ -76,6 +76,7 @@ async function fetchWeatherDataOnline(latitude: number, longitude: number): Prom
         current_weather: 'true',
         daily: 'temperature_2m_max,temperature_2m_min,precipitation_probability_max,weathercode',
         timezone: 'auto',
+        windspeed_unit: 'kmh',
     });
 
     const response = await fetch(`${OPEN_METEO_URL}?${query.toString()}`);
@@ -102,10 +103,12 @@ async function fetchWeatherDataOnline(latitude: number, longitude: number): Prom
         }))
         : [];
 
+    const currentPrecip = Array.isArray(daily.precipitation_probability_max) ? daily.precipitation_probability_max[0] ?? null : null;
+
     const weather: WeatherData = {
         temperature: current.temperature,
         windSpeed: current.windspeed,
-        precipitationProbability: null,
+        precipitationProbability: currentPrecip,
         weatherCode: current.weathercode,
         weatherDescription: getWeatherDescription(current.weathercode),
         time: current.time,

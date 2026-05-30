@@ -8,7 +8,10 @@
     "scheme": "stormchaserapp",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "icon": "./assets/expo.icon"
+      "icon": "./assets/expo.icon",
+      "infoPlist": {
+        "LSApplicationQueriesSchemes": ["maps", "comgooglemaps", "waze"]
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -24,6 +27,19 @@
       "favicon": "./assets/images/favicon.png"
     },
     "plugins": [
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Storm Chaser uses your location for live weather intelligence and GPS-tagged storm reports."
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/icon.png",
+          "color": "#FF4D6D"
+        }
+      ],
       "expo-router",
       [
         "expo-splash-screen",

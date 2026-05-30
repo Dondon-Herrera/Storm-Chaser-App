@@ -1,202 +1,341 @@
-import { Image } from 'expo-image';
-import { Link } from 'expo-router';
-import { useEffect, useState } from 'react';
-import { ActivityIndicator, Platform, ScrollView, StyleSheet, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { useCallback, useMemo, useState } from 'react';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { FilterChip } from '@/components/ui/filter-chip';
+import { Icons } from '@/components/ui/icons';
+import { IconAction } from '@/components/ui/icon-action';
+import { ScreenHeader } from '@/components/ui/screen-header';
+import { ScreenShell } from '@/components/ui/screen-shell';
+import { StormMapView } from '@/components/ui/storm-map-view';
+import { useResponsiveLayout } from '@/hooks/use-responsive-layout';
 import { useTheme } from '@/hooks/use-theme';
+import { getUniqueStormTypes, haversineKm, navigateToCellWithFeedback } from '@/lib/map-utils';
+import { navigateTo } from '@/lib/navigation';
+import { getStormTypeColor } from '@/lib/storm-intelligence';
 import { getStormReports, type StormReport } from '@/lib/storage';
-
-function getStaticMapUrl(reports: StormReport[]) {
-    if (!reports.length) {
-        return null;
-    }
-
-    const centerLat = reports.reduce((sum, report) => sum + report.latitude, 0) / reports.length;
-    const centerLon = reports.reduce((sum, report) => sum + report.longitude, 0) / reports.length;
-    const markers = reports
-        .slice(0, 8)
-        .map((report) => `${report.latitude.toFixed(5)},${report.longitude.toFixed(5)},red-pushpin`)
-        .join('|');
-
-    return `https://staticmap.openstreetmap.de/staticmap.php?center=${centerLat.toFixed(5)},${centerLon.toFixed(5)}&zoom=4&size=900x500&maptype=mapnik&markers=${encodeURIComponent(
-        markers
-    )}`;
-}
+import { getCachedWeatherData } from '@/lib/weather';
 
 export default function MapScreen() {
-    const [reports, setReports] = useState<StormReport[]>([]);
-    const [loading, setLoading] = useState(true);
-    const safeAreaInsets = useSafeAreaInsets();
-    const insets = {
-        ...safeAreaInsets,
-        bottom: safeAreaInsets.bottom + BottomTabInset + Spacing.three,
-    };
-    const theme = useTheme();
+  const router = useRouter();
+  const [reports, setReports] = useState<StormReport[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState<string>('All');
+  const [selectedId, setSelectedId] = useState<number | undefined>();
+  const [userCoords, setUserCoords] = useState<{ lat: number; lon: number } | null>(null);
+  const { titleFontSize, subtitleFontSize } = useResponsiveLayout();
+  const theme = useTheme();
 
-    useEffect(() => {
-        loadReports();
-    }, []);
+  const reloadMap = useCallback(() => {
+    setLoading(true);
 
-    async function loadReports() {
-        setLoading(true);
-        try {
-            const stored = await getStormReports();
-            setReports(stored);
-        } catch (error) {
-            console.error(error);
-        } finally {
-            setLoading(false);
+    void Promise.all([getStormReports(), getCachedWeatherData()])
+      .then(([stored, weather]) => {
+        setReports(stored);
+        if (weather) {
+          setUserCoords({ lat: weather.latitude, lon: weather.longitude });
         }
-    }
+        if (stored[0]?.id != null) {
+          setSelectedId(stored[0].id);
+        }
+      })
+      .catch((error) => console.error(error))
+      .finally(() => setLoading(false));
+  }, []);
 
-    const mapUrl = getStaticMapUrl(reports);
+  useFocusEffect(
+    useCallback(() => {
+      let cancelled = false;
+      setLoading(true);
 
-    return (
-        <ScrollView
-            style={[styles.scrollView, { backgroundColor: theme.background }]}
-            contentInset={insets}
-            contentContainerStyle={[styles.contentContainer, { paddingTop: insets.top }]}
-        >
-            <ThemedView style={styles.wrapper}>
-                <ThemedText type="title" style={styles.title}>
-                    Storm Map
+      void Promise.all([getStormReports(), getCachedWeatherData()])
+        .then(([stored, weather]) => {
+          if (cancelled) return;
+          setReports(stored);
+          if (weather) {
+            setUserCoords({ lat: weather.latitude, lon: weather.longitude });
+          }
+          if (stored[0]?.id != null) {
+            setSelectedId(stored[0].id);
+          }
+        })
+        .catch((error) => console.error(error))
+        .finally(() => {
+          if (!cancelled) setLoading(false);
+        });
+
+      return () => {
+        cancelled = true;
+      };
+    }, [])
+  );
+
+  const stormTypes = useMemo(() => ['All', ...getUniqueStormTypes(reports)], [reports]);
+
+  const filteredReports = useMemo(() => {
+    if (filter === 'All') return reports;
+    return reports.filter((r) => r.stormType === filter);
+  }, [reports, filter]);
+
+  const selectedReport = useMemo(
+    () => filteredReports.find((r) => r.id === selectedId) ?? filteredReports[0],
+    [filteredReports, selectedId]
+  );
+
+  const stats = useMemo(() => {
+    if (!reports.length) return null;
+    const avgWind = reports.reduce((s, r) => s + r.windSpeed, 0) / reports.length;
+    const latest = reports.reduce((a, b) => (a.dateTime > b.dateTime ? a : b));
+    return { count: reports.length, avgWind, latest };
+  }, [reports]);
+
+  const canShowMap = reports.length > 0 || userCoords != null;
+
+  return (
+    <ScreenShell>
+      <ScreenHeader
+        eyebrow="Tactical view"
+        title="Storm Radar Map"
+        subtitle="Pin every documented cell, filter by classification, and launch navigation."
+        titleSize={titleFontSize}
+        subtitleSize={subtitleFontSize}
+        actions={
+          <>
+            <IconAction label="New report" icon={Icons.add} variant="primary" onPress={() => navigateTo(router, '/log/new')} />
+            <IconAction label="Refresh" icon={Icons.refresh} onPress={reloadMap} disabled={loading} />
+          </>
+        }
+      />
+
+      {loading ? (
+        <Card style={styles.loadingCard}>
+          <ActivityIndicator color={theme.accentSecondary} />
+          <ThemedText type="small" themeColor="textSecondary">
+            Plotting storm coordinates…
+          </ThemedText>
+        </Card>
+      ) : !canShowMap ? (
+        <Card style={styles.emptyCard}>
+          <ThemedText type="smallBold">No coordinates yet</ThemedText>
+          <ThemedText type="small" themeColor="textSecondary">
+            Open Weather first to load your position, or log an intercept to unlock the tactical map.
+          </ThemedText>
+          <Button title="Go to Weather" size="lg" onPress={() => navigateTo(router, '/')} />
+          <Button title="Log intercept" variant="outline" size="lg" onPress={() => navigateTo(router, '/log/new')} />
+        </Card>
+      ) : (
+        <>
+          {stats ? (
+            <View style={styles.statsRow}>
+              <Card style={styles.statTile}>
+                <ThemedText type="small" themeColor="textMuted">
+                  Events
                 </ThemedText>
-                <ThemedText type="subtitle" themeColor="textSecondary" style={styles.subtitle}>
-                    Visualize documented storm locations and jump to reports from the map.
+                <ThemedText type="title" style={styles.statValue}>
+                  {stats.count}
                 </ThemedText>
+              </Card>
+              <Card style={styles.statTile}>
+                <ThemedText type="small" themeColor="textMuted">
+                  Avg wind
+                </ThemedText>
+                <ThemedText type="title" style={styles.statValue}>
+                  {stats.avgWind.toFixed(0)}
+                </ThemedText>
+              </Card>
+              <Card style={styles.statTile}>
+                <ThemedText type="small" themeColor="textMuted">
+                  Latest
+                </ThemedText>
+                <ThemedText type="smallBold" numberOfLines={1}>
+                  {new Date(stats.latest.dateTime).toLocaleDateString()}
+                </ThemedText>
+              </Card>
+            </View>
+          ) : userCoords ? (
+            <Card>
+              <ThemedText type="smallBold" style={{ color: theme.accentSecondary }}>
+                Weather fix plotted
+              </ThemedText>
+              <ThemedText type="small" themeColor="textSecondary">
+                No intercepts yet — showing your last known position from Weather.
+              </ThemedText>
+            </Card>
+          ) : null}
 
-                {loading ? (
-                    <ThemedView type="backgroundElement" style={styles.statusCard}>
-                        <ActivityIndicator color={theme.text} />
-                        <ThemedText type="small" themeColor="textSecondary" style={styles.loadingText}>
-                            Loading locations…
+          {reports.length > 0 ? (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
+              {stormTypes.map((type) => (
+                <FilterChip
+                  key={type}
+                  label={type}
+                  selected={filter === type}
+                  onPress={() => setFilter(type)}
+                  color={type === 'All' ? theme.accentSecondary : getStormTypeColor(type)}
+                />
+              ))}
+            </ScrollView>
+          ) : null}
+
+          <Pressable
+            onPress={() => {
+              if (selectedReport) {
+                void navigateToCellWithFeedback(
+                  selectedReport.latitude,
+                  selectedReport.longitude,
+                  selectedReport.stormType
+                );
+              } else if (userCoords) {
+                void navigateToCellWithFeedback(userCoords.lat, userCoords.lon, 'Weather fix');
+              }
+            }}>
+            <StormMapView
+              reports={filteredReports.length ? filteredReports : reports}
+              highlightId={selectedReport?.id}
+              userLat={userCoords?.lat}
+              userLon={userCoords?.lon}
+              selectedLabel={selectedReport?.stormType ?? 'Your weather fix'}
+            />
+          </Pressable>
+
+          {selectedReport && userCoords ? (
+            <Card>
+              <ThemedText type="small" themeColor="textMuted">
+                Distance from last weather fix
+              </ThemedText>
+              <ThemedText type="smallBold" style={{ color: theme.accentSecondary }}>
+                {haversineKm(userCoords.lat, userCoords.lon, selectedReport.latitude, selectedReport.longitude).toFixed(1)} km
+              </ThemedText>
+            </Card>
+          ) : null}
+
+          {filteredReports.length > 0 ? (
+            <Card style={styles.listCard}>
+              <ThemedText type="smallBold">Field intercepts ({filteredReports.length})</ThemedText>
+              {filteredReports.map((report) => {
+                const isSelected = report.id === selectedReport?.id;
+                const accent = getStormTypeColor(report.stormType);
+                const distance =
+                  userCoords != null
+                    ? haversineKm(userCoords.lat, userCoords.lon, report.latitude, report.longitude)
+                    : null;
+
+                return (
+                  <View
+                    key={report.id?.toString() ?? report.dateTime}
+                    style={[
+                      styles.reportRow,
+                      {
+                        borderColor: isSelected ? accent : theme.surfaceBorder,
+                        backgroundColor: isSelected ? `${accent}22` : 'transparent',
+                      },
+                    ]}>
+                    <Pressable
+                      style={styles.reportTap}
+                      onPress={() => report.id != null && setSelectedId(report.id)}>
+                      <View style={[styles.typeDot, { backgroundColor: accent }]} />
+                      <View style={styles.reportBody}>
+                        <ThemedText type="smallBold">{report.stormType}</ThemedText>
+                        <ThemedText type="small" themeColor="textSecondary">
+                          {new Date(report.dateTime).toLocaleString()} · {report.latitude.toFixed(2)}, {report.longitude.toFixed(2)}
                         </ThemedText>
-                    </ThemedView>
-                ) : reports.length === 0 ? (
-                    <ThemedView type="backgroundElement" style={styles.reportCard}>
-                        <ThemedText type="smallBold">No storm locations yet</ThemedText>
-                        <ThemedText type="small" themeColor="textSecondary" style={styles.cardText}>
-                            Create a storm report to see its location mapped here.
-                        </ThemedText>
-                        <Link href="/log/new">
-                            <ThemedText type="link">Add first report</ThemedText>
-                        </Link>
-                    </ThemedView>
-                ) : (
-                    <>
-                        {mapUrl ? (
-                            <Image source={{ uri: mapUrl }} style={styles.mapImage} contentFit="cover" />
+                        {distance != null ? (
+                          <ThemedText type="small" style={{ color: theme.accentSecondary }}>
+                            {distance.toFixed(1)} km from fix
+                          </ThemedText>
                         ) : null}
+                      </View>
+                    </Pressable>
+                    <Button title="Brief" variant="outline" onPress={() => navigateTo(router, `/log/${report.id}`)} />
+                  </View>
+                );
+              })}
+            </Card>
+          ) : null}
 
-                        <ThemedView type="backgroundElement" style={styles.summaryCard}>
-                            <ThemedText type="smallBold">Saved storm locations</ThemedText>
-                            <ThemedText type="small">{reports.length} documented storm events.</ThemedText>
-                        </ThemedView>
-
-                        <ThemedView type="backgroundElement" style={styles.reportList}>
-                            {reports.map((report) => (
-                                <View key={report.id?.toString() ?? report.dateTime} style={styles.reportRow}>
-                                    <View style={styles.reportDetails}>
-                                        <ThemedText type="smallBold">{report.stormType}</ThemedText>
-                                        <ThemedText type="small" themeColor="textSecondary">
-                                            {new Date(report.dateTime).toLocaleDateString()} • {report.latitude.toFixed(2)}, {report.longitude.toFixed(2)}
-                                        </ThemedText>
-                                    </View>
-                                    <Link href={`/log/${report.id}`} style={styles.reportLink}>
-                                        <ThemedText type="link">View</ThemedText>
-                                    </Link>
-                                </View>
-                            ))}
-                        </ThemedView>
-                    </>
-                )}
-
-                {reports.length === 0 && Platform.OS === 'web' && (
-                    <Image
-                        source={require('@/assets/images/tutorial-web.png')}
-                        style={styles.placeholderImage}
-                        contentFit="cover"
-                    />
-                )}
-            </ThemedView>
-        </ScrollView>
-    );
+          {selectedReport ? (
+            <View style={styles.footerActions}>
+              <Button
+                title="Navigate"
+                size="lg"
+                onPress={() =>
+                  void navigateToCellWithFeedback(
+                    selectedReport.latitude,
+                    selectedReport.longitude,
+                    selectedReport.stormType
+                  )
+                }
+              />
+              <Button title="Full dossier" variant="secondary" size="lg" onPress={() => navigateTo(router, `/log/${selectedReport.id}`)} />
+            </View>
+          ) : userCoords ? (
+            <Button
+              title="Navigate to weather fix"
+              size="lg"
+              onPress={() => void navigateToCellWithFeedback(userCoords.lat, userCoords.lon, 'Weather fix')}
+            />
+          ) : null}
+        </>
+      )}
+    </ScreenShell>
+  );
 }
 
 const styles = StyleSheet.create({
-    scrollView: {
-        flex: 1,
-    },
-    contentContainer: {
-        flexGrow: 1,
-        alignItems: 'center',
-    },
-    wrapper: {
-        width: '100%',
-        maxWidth: MaxContentWidth,
-        gap: Spacing.four,
-        paddingHorizontal: Spacing.four,
-        paddingBottom: Spacing.four,
-    },
-    title: {
-        textAlign: 'left',
-    },
-    subtitle: {
-        maxWidth: 560,
-    },
-    statusCard: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: Spacing.two,
-        padding: Spacing.four,
-        borderRadius: Spacing.four,
-    },
-    loadingText: {
-        marginLeft: Spacing.two,
-    },
-    reportCard: {
-        gap: Spacing.three,
-        padding: Spacing.four,
-        borderRadius: Spacing.four,
-    },
-    cardText: {
-        marginTop: Spacing.one,
-    },
-    mapImage: {
-        width: '100%',
-        aspectRatio: 16 / 9,
-        borderRadius: Spacing.four,
-    },
-    summaryCard: {
-        gap: Spacing.one,
-        padding: Spacing.four,
-        borderRadius: Spacing.four,
-    },
-    reportList: {
-        gap: Spacing.two,
-        padding: Spacing.four,
-        borderRadius: Spacing.four,
-    },
-    reportRow: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        gap: Spacing.four,
-    },
-    reportDetails: {
-        flex: 1,
-    },
-    reportLink: {
-        paddingVertical: Spacing.two,
-    },
-    placeholderImage: {
-        width: '100%',
-        aspectRatio: 1.8,
-        borderRadius: Spacing.four,
-        marginTop: Spacing.four,
-    },
+  loadingCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  emptyCard: {
+    gap: 12,
+  },
+  statsRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  statTile: {
+    flex: 1,
+    padding: 14,
+  },
+  statValue: {
+    fontSize: 28,
+    lineHeight: 32,
+  },
+  chipRow: {
+    gap: 10,
+    paddingVertical: 2,
+  },
+  listCard: {
+    gap: 10,
+  },
+  reportRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    padding: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+  },
+  reportTap: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  typeDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+  },
+  reportBody: {
+    flex: 1,
+    gap: 4,
+  },
+  footerActions: {
+    gap: 10,
+  },
 });

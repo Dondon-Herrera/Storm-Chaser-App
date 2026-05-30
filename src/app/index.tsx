@@ -1,35 +1,53 @@
-import { useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { ActivityIndicator, RefreshControl, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { ChaseAlertBanner } from '@/components/ui/chase-alert-banner';
+import { ChaseScoreCard } from '@/components/ui/chase-score-card';
+import { FieldDashboardCard } from '@/components/ui/field-dashboard';
+import { Icons } from '@/components/ui/icons';
+import { ForecastOutlook } from '@/components/ui/forecast-outlook';
+import { IconAction } from '@/components/ui/icon-action';
+import { NwsAlertsPanel } from '@/components/ui/nws-alerts-panel';
+import { useNwsAlerts } from '@/hooks/use-nws-alerts';
+import { navigateTo } from '@/lib/navigation';
+import { notifyChaseReadiness } from '@/lib/notifications';
+import { MetricTile } from '@/components/ui/metric-tile';
+import { ScreenHeader } from '@/components/ui/screen-header';
+import { ScreenShell } from '@/components/ui/screen-shell';
+import { useFieldDashboard } from '@/hooks/use-field-dashboard';
+import { useResponsiveLayout } from '@/hooks/use-responsive-layout';
 import { useTheme } from '@/hooks/use-theme';
-import { fetchWeatherData, getCachedWeatherData, getCurrentLocation, requestLocationPermissions, type WeatherData } from '@/lib/weather';
+import { hapticSuccess, hapticWarning } from '@/lib/haptics';
+import { getChaseBrief, getChaseReadiness } from '@/lib/storm-intelligence';
+import {
+  fetchWeatherData,
+  getCachedWeatherData,
+  getCurrentLocation,
+  requestLocationPermissions,
+  type WeatherData,
+} from '@/lib/weather';
 
 type LoadState = 'loading' | 'ready' | 'not-found' | 'error';
 
 export default function WeatherScreen() {
+  const router = useRouter();
   const [weather, setWeather] = useState<WeatherData | null>(null);
   const [status, setStatus] = useState<LoadState>('loading');
-  const [message, setMessage] = useState('Checking location and weather data…');
+  const [message, setMessage] = useState('Scanning atmosphere near your position…');
   const [refreshing, setRefreshing] = useState(false);
-  const safeAreaInsets = useSafeAreaInsets();
-  const insets = {
-    top: safeAreaInsets.top,
-    bottom: safeAreaInsets.bottom + BottomTabInset + Spacing.three,
-  };
+  const fieldDashboard = useFieldDashboard();
+  const nwsAlerts = useNwsAlerts();
+  const { titleFontSize, subtitleFontSize, metricMinWidth } = useResponsiveLayout();
   const theme = useTheme();
 
-  useEffect(() => {
-    refreshWeather();
-  }, []);
-
-  async function refreshWeather() {
+  const refreshWeather = useCallback(async () => {
     setRefreshing(true);
     setStatus('loading');
-    setMessage('Checking location and weather data…');
+    setMessage('Scanning atmosphere near your position…');
 
     try {
       const hasPermission = await requestLocationPermissions();
@@ -38,12 +56,11 @@ export default function WeatherScreen() {
         if (cachedWeather) {
           setWeather(cachedWeather);
           setStatus('ready');
-          setMessage('Location access denied: showing last cached weather data.');
+          setMessage('Location off — showing cached intelligence.');
           return;
         }
-
         setStatus('not-found');
-        setMessage('Location access is required to fetch storm-ready weather data.');
+        setMessage('Enable location for live storm intelligence.');
         return;
       }
 
@@ -53,248 +70,249 @@ export default function WeatherScreen() {
         if (cachedWeather) {
           setWeather(cachedWeather);
           setStatus('ready');
-          setMessage('Unable to access location: showing last cached weather data.');
+          setMessage('GPS unavailable — cached data loaded.');
           return;
         }
-
         setStatus('not-found');
-        setMessage('Unable to determine your current location.');
+        setMessage('Could not resolve your chase coordinates.');
         return;
       }
 
       const weatherData = await fetchWeatherData(location.coords.latitude, location.coords.longitude);
       setWeather(weatherData);
       setStatus('ready');
+      void hapticSuccess();
     } catch (error) {
       console.error(error);
       setStatus('error');
-      setMessage('Weather information could not be retrieved. Try again later.');
+      setMessage('Forecast uplink failed. Pull to refresh.');
+      void hapticWarning();
     } finally {
       setRefreshing(false);
     }
-  }
+  }, []);
 
-  const renderStatusBanner = () => {
-    if (status === 'loading') {
-      return (
-        <ThemedView type="backgroundElement" style={styles.statusCard}>
-          <View style={styles.loadingRow}>
-            <ActivityIndicator color={theme.text} />
-            <ThemedText type="small" themeColor="textSecondary" style={styles.loadingText}>
-              {message}
-            </ThemedText>
-          </View>
-        </ThemedView>
-      );
+  const readiness = useMemo(() => (weather ? getChaseReadiness(weather) : null), [weather]);
+
+  const chaseBrief = useMemo(
+    () => (weather && readiness ? getChaseBrief(weather, readiness) : null),
+    [weather, readiness]
+  );
+
+  useEffect(() => {
+    if (status !== 'ready' || !weather) {
+      return;
     }
 
-    if (status === 'not-found' || status === 'error') {
-      return (
-        <ThemedView type="backgroundElement" style={styles.statusCard}>
-          <ThemedText type="smallBold">Weather not found</ThemedText>
-          <ThemedText type="small" themeColor="textSecondary" style={styles.cardText}>
-            {message}
-          </ThemedText>
-          <Pressable style={({ pressed }) => [styles.refreshButton, pressed && styles.refreshButtonPressed]} onPress={refreshWeather}>
-            <ThemedText type="link">Try again</ThemedText>
-          </Pressable>
-        </ThemedView>
-      );
-    }
+    const currentReadiness = getChaseReadiness(weather);
+    void notifyChaseReadiness(currentReadiness);
+    void nwsAlerts.loadAlerts(weather.latitude, weather.longitude);
+  }, [weather, status, nwsAlerts.loadAlerts]);
 
-    return null;
-  };
+  useEffect(() => {
+    let cancelled = false;
 
-  const renderCacheBanner = () => {
-    if (!weather?.isCached || status !== 'ready') {
-      return null;
-    }
+    void (async () => {
+      try {
+        const hasPermission = await requestLocationPermissions();
+        if (!hasPermission) {
+          const cachedWeather = await getCachedWeatherData();
+          if (!cancelled && cachedWeather) {
+            setWeather(cachedWeather);
+            setStatus('ready');
+            setMessage('Location off — showing cached intelligence.');
+          } else if (!cancelled) {
+            setStatus('not-found');
+            setMessage('Enable location for live storm intelligence.');
+          }
+          return;
+        }
 
-    return (
-      <ThemedView type="backgroundElement" style={styles.statusCard}>
-        <ThemedText type="smallBold">Offline weather</ThemedText>
-        <ThemedText type="small" themeColor="textSecondary" style={styles.cardText}>
-          Showing the last successful forecast stored locally.
-        </ThemedText>
-      </ThemedView>
-    );
-  };
+        const location = await getCurrentLocation();
+        if (!location?.coords) {
+          const cachedWeather = await getCachedWeatherData();
+          if (!cancelled && cachedWeather) {
+            setWeather(cachedWeather);
+            setStatus('ready');
+            setMessage('GPS unavailable — cached data loaded.');
+          } else if (!cancelled) {
+            setStatus('not-found');
+            setMessage('Could not resolve your chase coordinates.');
+          }
+          return;
+        }
 
-  const renderWeatherSection = () => {
-    if (!weather || status !== 'ready') {
-      return null;
-    }
+        const weatherData = await fetchWeatherData(location.coords.latitude, location.coords.longitude);
+        if (!cancelled) {
+          setWeather(weatherData);
+          setStatus('ready');
+        }
+      } catch (error) {
+        console.error(error);
+        if (!cancelled) {
+          setStatus('error');
+          setMessage('Forecast uplink failed. Pull to refresh.');
+        }
+      }
+    })();
 
-    const precipitationLabel = weather.precipitationProbability !== null ? `${weather.precipitationProbability}%` : 'N/A';
-    const locationLabel = `${weather.latitude.toFixed(2)}, ${weather.longitude.toFixed(2)}`;
-
-    return (
-      <>
-        <ThemedView type="backgroundElement" style={styles.highlightCard}>
-          <ThemedText type="smallBold">Live conditions</ThemedText>
-          <ThemedText type="title" style={styles.temperatureText}>
-            {weather.temperature.toFixed(1)}°C
-          </ThemedText>
-          <ThemedText type="small" themeColor="textSecondary">
-            {weather.weatherDescription}
-          </ThemedText>
-        </ThemedView>
-
-        <ThemedView type="backgroundElement" style={styles.metricsGrid}>
-          <View style={styles.metricItem}>
-            <ThemedText type="smallBold">Wind</ThemedText>
-            <ThemedText type="default">{weather.windSpeed.toFixed(0)} km/h</ThemedText>
-          </View>
-          <View style={styles.metricItem}>
-            <ThemedText type="smallBold">Chance of rain</ThemedText>
-            <ThemedText type="default">{precipitationLabel}</ThemedText>
-          </View>
-          <View style={styles.metricItem}>
-            <ThemedText type="smallBold">Location</ThemedText>
-            <ThemedText type="default">{locationLabel}</ThemedText>
-          </View>
-          <View style={styles.metricItem}>
-            <ThemedText type="smallBold">As of</ThemedText>
-            <ThemedText type="default">{new Date(weather.time).toLocaleTimeString()}</ThemedText>
-          </View>
-        </ThemedView>
-      </>
-    );
-  };
-
-  const renderForecastSection = () => {
-    if (!weather?.forecast?.length || status !== 'ready') {
-      return null;
-    }
-
-    return (
-      <ThemedView type="backgroundElement" style={styles.forecastCard}>
-        <ThemedText type="smallBold">5-day forecast</ThemedText>
-        <View style={styles.forecastGrid}>
-          {weather.forecast.slice(0, 5).map((day) => (
-            <ThemedView key={day.date} type="backgroundElement" style={styles.forecastDay}>
-              <ThemedText type="smallBold">{new Date(day.date).toLocaleDateString(undefined, { weekday: 'short' })}</ThemedText>
-              <ThemedText type="small" themeColor="textSecondary">
-                {day.weatherDescription}
-              </ThemedText>
-              <ThemedText type="default">
-                {day.minTemperature.toFixed(0)}° / {day.maxTemperature.toFixed(0)}°
-              </ThemedText>
-              <ThemedText type="small">Rain {day.precipitationProbability ?? 0}%</ThemedText>
-            </ThemedView>
-          ))}
-        </View>
-      </ThemedView>
-    );
-  };
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   return (
-    <ScrollView
-      style={[styles.scrollView, { backgroundColor: theme.background }]}
-      contentInset={insets}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refreshWeather} tintColor={theme.text} />}
-      contentContainerStyle={[styles.contentContainer, { paddingTop: insets.top }]}
-    >
-      <ThemedView style={styles.wrapper}>
-        <ThemedText type="title" style={styles.title}>
-          Storm Chaser Forecast
-        </ThemedText>
-        <ThemedText type="subtitle" themeColor="textSecondary" style={styles.subtitle}>
-          Weather updates for the current location and important storm details at a glance.
-        </ThemedText>
+    <ScreenShell
+      refreshControl={
+        <RefreshControl refreshing={refreshing} onRefresh={refreshWeather} tintColor={theme.accentSecondary} />
+      }>
+      <ScreenHeader
+        eyebrow="Live intelligence"
+        title="Storm Command"
+        subtitle="Real-time chase readiness, field metrics, and tactical forecast."
+        titleSize={titleFontSize}
+        subtitleSize={subtitleFontSize}
+        actions={
+          <>
+            <IconAction
+              label="Refresh"
+              icon={Icons.refresh}
+              variant="primary"
+              onPress={refreshWeather}
+              disabled={refreshing}
+            />
+            <IconAction label="Live map" icon={Icons.map} onPress={() => navigateTo(router, '/map')} />
+            <IconAction label="Log storm" icon={Icons.camera} onPress={() => navigateTo(router, '/log/new')} />
+          </>
+        }
+      />
 
-        {renderStatusBanner()}
-        {renderCacheBanner()}
-        {renderWeatherSection()}
-        {renderForecastSection()}
-      </ThemedView>
-    </ScrollView>
+      <FieldDashboardCard
+        data={fieldDashboard}
+        onOpenLog={() => navigateTo(router, '/log')}
+        onOpenMap={() => navigateTo(router, '/map')}
+        onOpenLatest={
+          fieldDashboard.latestReport?.id != null
+            ? () => navigateTo(router, `/log/${fieldDashboard.latestReport!.id}`)
+            : undefined
+        }
+      />
+
+      {status === 'loading' && !weather ? (
+        <Card style={styles.statusCard}>
+          <ActivityIndicator color={theme.accentSecondary} />
+          <ThemedText type="small" themeColor="textSecondary">
+            {message}
+          </ThemedText>
+        </Card>
+      ) : null}
+
+      {(status === 'not-found' || status === 'error') && !weather ? (
+        <Card style={styles.statusCard}>
+          <ThemedText type="smallBold">Signal lost</ThemedText>
+          <ThemedText type="small" themeColor="textSecondary">
+            {message}
+          </ThemedText>
+          <Button title="Reconnect" onPress={refreshWeather} size="lg" />
+        </Card>
+      ) : null}
+
+      {weather?.isCached && status === 'ready' ? (
+        <Card style={styles.offlineBanner}>
+          <ThemedText type="smallBold" style={{ color: theme.warning }}>
+            Offline mode
+          </ThemedText>
+          <ThemedText type="small" themeColor="textSecondary">
+            Last successful uplink stored on device.
+          </ThemedText>
+        </Card>
+      ) : null}
+
+      {weather && readiness && status === 'ready' ? (
+        <>
+          <ChaseAlertBanner readiness={readiness} />
+          <NwsAlertsPanel alerts={nwsAlerts.alerts} loading={nwsAlerts.loading} error={nwsAlerts.error} />
+          <ChaseScoreCard weather={weather} readiness={readiness} />
+
+          <View style={styles.metricsGrid}>
+            <MetricTile label="Wind" value={`${weather.windSpeed.toFixed(0)} km/h`} icon={Icons.wind} minWidth={metricMinWidth} />
+            <MetricTile
+              label="Rain chance"
+              value={weather.precipitationProbability != null ? `${weather.precipitationProbability}%` : '—'}
+              icon={Icons.rain}
+              minWidth={metricMinWidth}
+              accentColor={theme.accent}
+            />
+            <MetricTile
+              label="Coordinates"
+              value={`${weather.latitude.toFixed(2)}°, ${weather.longitude.toFixed(2)}°`}
+              icon={Icons.location}
+              minWidth={metricMinWidth}
+            />
+            <MetricTile
+              label="Updated"
+              value={new Date(weather.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              icon={Icons.clock}
+              minWidth={metricMinWidth}
+            />
+          </View>
+
+          <Card>
+            <ThemedText type="smallBold" style={{ color: theme.accentSecondary }}>
+              Chase brief
+            </ThemedText>
+            <ThemedText type="small" themeColor="textSecondary">
+              {chaseBrief}
+            </ThemedText>
+            {readiness.factors.map((factor) => (
+              <View key={factor} style={[styles.factorRow, { borderColor: theme.surfaceBorder }]}>
+                <View style={[styles.factorDot, { backgroundColor: readiness.color }]} />
+                <ThemedText type="small">{factor}</ThemedText>
+              </View>
+            ))}
+          </Card>
+
+          {weather.forecast?.length ? <ForecastOutlook days={weather.forecast} /> : null}
+
+          <View style={styles.ctaRow}>
+            <Button title="Open tactical map" size="lg" onPress={() => navigateTo(router, '/map')} />
+            <Button title="Document storm" variant="outline" size="lg" onPress={() => navigateTo(router, '/log/new')} />
+          </View>
+        </>
+      ) : null}
+    </ScreenShell>
   );
 }
 
 const styles = StyleSheet.create({
-  scrollView: {
-    flex: 1,
-  },
-  contentContainer: {
-    flexGrow: 1,
-    alignItems: 'center',
-  },
-  wrapper: {
-    width: '100%',
-    maxWidth: MaxContentWidth,
-    gap: Spacing.four,
-    paddingHorizontal: Spacing.four,
-    paddingBottom: Spacing.four,
-  },
-  title: {
-    textAlign: 'left',
-  },
-  subtitle: {
-    maxWidth: 560,
-  },
   statusCard: {
-    gap: Spacing.two,
-    padding: Spacing.four,
-    borderRadius: Spacing.four,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
   },
-  highlightCard: {
-    gap: Spacing.two,
-    padding: Spacing.four,
-    borderRadius: Spacing.four,
+  offlineBanner: {
+    borderLeftWidth: 3,
+    borderLeftColor: '#FBBF24',
   },
   metricsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: Spacing.three,
-    justifyContent: 'space-between',
+    gap: 12,
   },
-  metricItem: {
-    minWidth: '45%',
-    padding: Spacing.four,
-    borderRadius: Spacing.four,
-    backgroundColor: 'rgba(255,255,255,0.06)',
-  },
-  cardText: {
-    marginTop: Spacing.one,
-  },
-  loadingRow: {
+  factorRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.two,
+    gap: 10,
+    paddingTop: 8,
+    borderTopWidth: 1,
   },
-  loadingText: {
-    marginLeft: Spacing.two,
+  factorDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
   },
-  refreshButton: {
-    alignSelf: 'flex-start',
-    marginTop: Spacing.two,
-    paddingHorizontal: Spacing.four,
-    paddingVertical: Spacing.two,
-    borderRadius: Spacing.five,
-  },
-  refreshButtonPressed: {
-    opacity: 0.75,
-  },
-  temperatureText: {
-    marginTop: Spacing.one,
-  },
-  forecastCard: {
-    gap: Spacing.three,
-    padding: Spacing.four,
-    borderRadius: Spacing.four,
-  },
-  forecastGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: Spacing.three,
-    justifyContent: 'space-between',
-  },
-  forecastDay: {
-    width: '48%',
-    gap: Spacing.one,
-    padding: Spacing.three,
-    borderRadius: Spacing.four,
-    backgroundColor: 'rgba(255,255,255,0.04)',
+  ctaRow: {
+    gap: 12,
+    marginTop: 4,
   },
 });

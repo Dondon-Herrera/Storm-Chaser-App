@@ -8,6 +8,8 @@ export function useColorScheme() {
   const [hasHydrated, setHasHydrated] = useState(false);
 
   useEffect(() => {
+    // Defer to client after static web render so the color scheme matches the device.
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional hydration gate
     setHasHydrated(true);
   }, []);
 

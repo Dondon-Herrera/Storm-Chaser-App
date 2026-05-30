@@ -1,9 +1,37 @@
 :root {
   --font-display:
-    Spline Sans, Inter, ui-sans-serif, system-ui, sans-serif, Apple Color Emoji, Segoe UI Emoji,
-    Segoe UI Symbol, Noto Color Emoji;
+    "SF Pro Display", "Segoe UI", Inter, ui-sans-serif, system-ui, sans-serif, Apple Color Emoji,
+    Segoe UI Emoji, Segoe UI Symbol, Noto Color Emoji;
   --font-mono:
     ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, Courier New, monospace;
   --font-rounded: 'SF Pro Rounded', 'Hiragino Maru Gothic ProN', Meiryo, 'MS PGothic', sans-serif;
   --font-serif: Georgia, 'Times New Roman', serif;
+  --color-bg: #04060f;
+  --color-surface: rgba(10, 14, 32, 0.88);
+  --color-surface-elevated: rgba(18, 22, 48, 0.94);
+  --color-muted: rgba(148, 163, 184, 0.9);
+  --color-text: #f8fafc;
+  --color-accent: #ff4d6d;
+  --color-accent-secondary: #22d3ee;
+  --radius-sm: 10px;
+  --radius-md: 16px;
+  --radius-lg: 22px;
+  --shadow-glow: 0 0 24px rgba(34, 211, 238, 0.25);
+  --shadow-card: 0 12px 40px rgba(0, 0, 0, 0.45);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  min-height: 100%;
+}
+
+body {
+  background-color: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-display);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  margin: 0;
 }

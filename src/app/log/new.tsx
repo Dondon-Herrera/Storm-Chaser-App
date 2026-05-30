@@ -1,16 +1,24 @@
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, TextInput } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { ScrollView, StyleSheet, TextInput } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { FilterChip } from '@/components/ui/filter-chip';
+import { ScreenHeader } from '@/components/ui/screen-header';
+import { ScreenShell } from '@/components/ui/screen-shell';
+import { Radii, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
+import { hapticSuccess } from '@/lib/haptics';
+import { navigateTo } from '@/lib/navigation';
+import { getStormTypeColor } from '@/lib/storm-intelligence';
 import { capturePhotoAsync, requestCameraPermissions } from '@/lib/camera';
 import { saveStormReport } from '@/lib/storage';
 import { fetchWeatherData, getCurrentLocation, requestLocationPermissions } from '@/lib/weather';
+
+const STORM_PRESETS = ['Supercell', 'Tornado', 'Hail core', 'Downburst', 'Lightning barrage', 'Flooding'];
 
 export default function NewStormReportScreen() {
     const [photoUri, setPhotoUri] = useState<string | null>(null);
@@ -28,50 +36,65 @@ export default function NewStormReportScreen() {
     const [message, setMessage] = useState('');
 
     const router = useRouter();
-    const safeAreaInsets = useSafeAreaInsets();
-    const insets = {
-        top: safeAreaInsets.top,
-        bottom: safeAreaInsets.bottom + BottomTabInset + Spacing.three,
-    };
     const theme = useTheme();
 
     useEffect(() => {
-        loadMetadata();
+        let cancelled = false;
+
+        void (async () => {
+            setMessage('Loading location and weather information…');
+
+            try {
+                const hasPermission = await requestLocationPermissions();
+                if (cancelled) {
+                    return;
+                }
+                if (!hasPermission) {
+                    setMessage('Allow location access to save location-based storm reports.');
+                    return;
+                }
+
+                const location = await getCurrentLocation();
+                if (cancelled) {
+                    return;
+                }
+                if (!location?.coords) {
+                    setMessage('Could not detect your current position.');
+                    return;
+                }
+
+                setLatitude(location.coords.latitude);
+                setLongitude(location.coords.longitude);
+                setDateTime(new Date().toISOString());
+
+                const weatherData = await fetchWeatherData(
+                    location.coords.latitude,
+                    location.coords.longitude
+                );
+                if (cancelled) {
+                    return;
+                }
+
+                setWeatherCondition(weatherData.weatherDescription);
+                setTemperature(weatherData.temperature);
+                setWindSpeed(weatherData.windSpeed);
+                setPrecipitationProbability(weatherData.precipitationProbability);
+            } catch (error) {
+                console.error(error);
+                if (!cancelled) {
+                    setMessage('Unable to load weather metadata. You can still save a report manually.');
+                }
+            } finally {
+                if (!cancelled) {
+                    setLoadingMetadata(false);
+                }
+            }
+        })();
+
+        return () => {
+            cancelled = true;
+        };
     }, []);
-
-    async function loadMetadata() {
-        setLoadingMetadata(true);
-        setMessage('Loading location and weather information…');
-
-        try {
-            const hasPermission = await requestLocationPermissions();
-            if (!hasPermission) {
-                setMessage('Allow location access to save location-based storm reports.');
-                return;
-            }
-
-            const location = await getCurrentLocation();
-            if (!location?.coords) {
-                setMessage('Could not detect your current position.');
-                return;
-            }
-
-            setLatitude(location.coords.latitude);
-            setLongitude(location.coords.longitude);
-            setDateTime(new Date().toISOString());
-
-            const weatherData = await fetchWeatherData(location.coords.latitude, location.coords.longitude);
-            setWeatherCondition(weatherData.weatherDescription);
-            setTemperature(weatherData.temperature);
-            setWindSpeed(weatherData.windSpeed);
-            setPrecipitationProbability(weatherData.precipitationProbability);
-        } catch (error) {
-            console.error(error);
-            setMessage('Unable to load weather metadata. You can still save a report manually.');
-        } finally {
-            setLoadingMetadata(false);
-        }
-    }
 
     async function handleCapturePhoto() {
         setMessage('');
@@ -127,7 +150,8 @@ export default function NewStormReportScreen() {
                 windSpeed,
                 precipitationProbability,
             });
-            router.push('/log');
+            void hapticSuccess();
+            navigateTo(router, '/log');
         } catch (error) {
             console.error(error);
             setMessage('Unable to save the storm report. Please try again.');
@@ -140,56 +164,61 @@ export default function NewStormReportScreen() {
     const precipitationText = precipitationProbability !== null ? `${precipitationProbability}%` : 'N/A';
 
     return (
-        <ScrollView
-            style={[styles.scrollView, { backgroundColor: theme.background }]}
-            contentInset={insets}
-            contentContainerStyle={[styles.contentContainer, { paddingTop: insets.top }]}
-        >
-            <ThemedView style={styles.wrapper}>
-                <ThemedText type="title" style={styles.title}>
-                    New Storm Report
-                </ThemedText>
-                <ThemedText type="subtitle" themeColor="textSecondary" style={styles.subtitle}>
-                    Capture storm evidence, save coordinates, and archive the weather context.
-                </ThemedText>
+        <ScreenShell>
+            <ScreenHeader
+                eyebrow="Field capture"
+                title="New intercept"
+                subtitle="Attach photo evidence, classify the cell, and auto-bind live weather telemetry."
+            />
 
-                <ThemedView type="backgroundElement" style={styles.metaCard}>
+                <Card style={styles.metaCard}>
                     <ThemedText type="smallBold">Report metadata</ThemedText>
                     <ThemedText type="small">Location: {locationText}</ThemedText>
                     <ThemedText type="small">Date & time: {new Date(dateTime).toLocaleString()}</ThemedText>
-                    <ThemedText type="small">Current weather: {weatherCondition || 'Loading…'}</ThemedText>
+                    <ThemedText type="small">
+                        Current weather: {loadingMetadata ? 'Loading…' : weatherCondition || 'Unavailable'}
+                    </ThemedText>
                     <ThemedText type="small">Temp: {temperature !== null ? `${temperature.toFixed(1)}°C` : '—'}</ThemedText>
                     <ThemedText type="small">Wind: {windSpeed !== null ? `${windSpeed.toFixed(0)} km/h` : '—'}</ThemedText>
                     <ThemedText type="small">Rain chance: {precipitationText}</ThemedText>
-                </ThemedView>
+                </Card>
 
-                <Pressable style={({ pressed }) => [styles.photoButton, pressed && styles.buttonPressed]} onPress={handleCapturePhoto}>
-                    <ThemedText type="link">Capture Photo</ThemedText>
-                </Pressable>
+                <Button title="Capture photo" onPress={handleCapturePhoto} />
 
                 {photoUri ? (
                     <Image source={{ uri: photoUri }} style={styles.photoPreview} contentFit="cover" />
                 ) : (
-                    <ThemedView type="backgroundElement" style={styles.photoPlaceholder}>
+                    <Card style={styles.photoPlaceholder}>
                         <ThemedText type="smallBold">No photo selected yet</ThemedText>
                         <ThemedText type="small" themeColor="textSecondary">
                             Use the camera button above to attach storm evidence.
                         </ThemedText>
-                    </ThemedView>
+                    </Card>
                 )}
 
-                <ThemedView type="backgroundElement" style={styles.inputCard}>
-                    <ThemedText type="smallBold">Storm type / classification</ThemedText>
+                <Card style={styles.inputCard}>
+                    <ThemedText type="smallBold">Classification</ThemedText>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.presetRow}>
+                        {STORM_PRESETS.map((preset) => (
+                            <FilterChip
+                                key={preset}
+                                label={preset}
+                                selected={stormType === preset}
+                                onPress={() => setStormType(preset)}
+                                color={getStormTypeColor(preset)}
+                            />
+                        ))}
+                    </ScrollView>
                     <TextInput
-                        style={[styles.input, { color: theme.text, borderColor: theme.backgroundSelected }]}
+                        style={[styles.input, { color: theme.text, borderColor: theme.surfaceBorder, backgroundColor: theme.backgroundElevated }]}
                         value={stormType}
-                        placeholder="e.g. Tornado, Hail, Wind Event"
+                        placeholder="Custom classification"
                         placeholderTextColor={theme.textSecondary}
                         onChangeText={setStormType}
                     />
                     <ThemedText type="smallBold">Weather conditions</ThemedText>
                     <TextInput
-                        style={[styles.input, { color: theme.text, borderColor: theme.backgroundSelected }]}
+                        style={[styles.input, { color: theme.text, borderColor: theme.surfaceBorder, backgroundColor: theme.backgroundElevated }]}
                         value={weatherCondition}
                         placeholder="Describe observed weather"
                         placeholderTextColor={theme.textSecondary}
@@ -197,98 +226,53 @@ export default function NewStormReportScreen() {
                     />
                     <ThemedText type="smallBold">Notes / description</ThemedText>
                     <TextInput
-                        style={[styles.textArea, { color: theme.text, borderColor: theme.backgroundSelected }]}
+                        style={[styles.textArea, { color: theme.text, borderColor: theme.surfaceBorder, backgroundColor: theme.backgroundElevated }]}
                         value={notes}
                         placeholder="Add notes about the storm event"
                         placeholderTextColor={theme.textSecondary}
                         onChangeText={setNotes}
                         multiline
                     />
-                </ThemedView>
+                </Card>
 
                 {message ? <ThemedText type="small" themeColor="textSecondary">{message}</ThemedText> : null}
 
-                <Pressable
-                    style={({ pressed }) => [styles.saveButton, pressed && styles.buttonPressed]}
-                    onPress={handleSaveReport}
-                    disabled={saving || loadingMetadata}
-                >
-                    {saving ? <ActivityIndicator color={theme.text} /> : <ThemedText type="link">Save Report</ThemedText>}
-                </Pressable>
-            </ThemedView>
-        </ScrollView>
+                <Button title={saving ? 'Archiving…' : 'Archive intercept'} size="lg" onPress={handleSaveReport} />
+        </ScreenShell>
     );
 }
 
 const styles = StyleSheet.create({
-    scrollView: {
-        flex: 1,
-    },
-    contentContainer: {
-        flexGrow: 1,
-        alignItems: 'center',
-    },
-    wrapper: {
-        width: '100%',
-        maxWidth: MaxContentWidth,
-        gap: Spacing.four,
-        paddingHorizontal: Spacing.four,
-        paddingBottom: Spacing.four,
-    },
-    title: {
-        textAlign: 'left',
-    },
-    subtitle: {
-        maxWidth: 560,
-    },
     metaCard: {
         gap: Spacing.two,
-        padding: Spacing.four,
-        borderRadius: Spacing.four,
     },
-    photoButton: {
-        alignSelf: 'flex-start',
-        paddingHorizontal: Spacing.four,
-        paddingVertical: Spacing.three,
-        borderRadius: Spacing.five,
+    presetRow: {
+        gap: Spacing.two,
+        paddingVertical: Spacing.one,
     },
     photoPreview: {
         width: '100%',
-        aspectRatio: 16 / 9,
-        borderRadius: Spacing.four,
+        height: 220,
+        borderRadius: Radii.large,
     },
     photoPlaceholder: {
         gap: Spacing.two,
-        padding: Spacing.four,
-        borderRadius: Spacing.four,
     },
     inputCard: {
-        gap: Spacing.two,
-        padding: Spacing.four,
-        borderRadius: Spacing.four,
+        gap: Spacing.three,
     },
     input: {
         borderWidth: 1,
-        borderRadius: Spacing.four,
-        paddingHorizontal: Spacing.four,
+        borderRadius: Radii.normal,
+        paddingHorizontal: Spacing.three,
         paddingVertical: Spacing.three,
     },
     textArea: {
         borderWidth: 1,
-        borderRadius: Spacing.four,
-        paddingHorizontal: Spacing.four,
+        borderRadius: Radii.normal,
+        paddingHorizontal: Spacing.three,
         paddingVertical: Spacing.three,
         minHeight: 120,
         textAlignVertical: 'top',
-    },
-    saveButton: {
-        alignSelf: 'stretch',
-        paddingHorizontal: Spacing.four,
-        paddingVertical: Spacing.four,
-        borderRadius: Spacing.five,
-        alignItems: 'center',
-    },
-    buttonPressed: {
-        opacity: 0.75,
     },
 });

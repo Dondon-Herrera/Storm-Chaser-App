@@ -1,6 +1,5 @@
 /**
- * Below are the colors that are used in the app. The colors are defined in the light and dark mode.
- * There are many other ways to style your app. For example, [Nativewind](https://www.nativewind.dev/), [Tamagui](https://tamagui.dev/), [unistyles](https://reactnativeunistyles.vercel.app), etc.
+ * Storm Chaser design tokens — electric storm aesthetic over video background.
  */
 
 import '@/global.css';
@@ -9,32 +8,63 @@ import { Platform } from 'react-native';
 
 export const Colors = {
   light: {
-    text: '#000000',
-    background: '#ffffff',
-    backgroundElement: '#F0F0F3',
-    backgroundSelected: '#E0E1E6',
-    textSecondary: '#60646C',
+    text: '#F8FAFC',
+    background: 'transparent',
+    backgroundElement: 'rgba(10, 14, 32, 0.82)',
+    backgroundSelected: 'rgba(34, 211, 238, 0.18)',
+    backgroundElevated: 'rgba(18, 22, 48, 0.92)',
+    textSecondary: 'rgba(226, 232, 240, 0.72)',
+    textMuted: 'rgba(148, 163, 184, 0.9)',
+    accent: '#FF4D6D',
+    accentSecondary: '#22D3EE',
+    accentMuted: 'rgba(255, 77, 109, 0.2)',
+    glowCyan: 'rgba(34, 211, 238, 0.45)',
+    glowRose: 'rgba(255, 77, 109, 0.4)',
+    surfaceBorder: 'rgba(148, 163, 184, 0.22)',
+    tabBar: 'rgba(6, 8, 20, 0.72)',
+    success: '#34D399',
+    warning: '#FBBF24',
+    danger: '#F87171',
+    gradientStart: '#1E1B4B',
+    gradientEnd: '#0F172A',
   },
   dark: {
-    text: '#ffffff',
-    background: '#000000',
-    backgroundElement: '#212225',
-    backgroundSelected: '#2E3135',
-    textSecondary: '#B0B4BA',
+    text: '#F8FAFC',
+    background: 'transparent',
+    backgroundElement: 'rgba(8, 12, 28, 0.86)',
+    backgroundSelected: 'rgba(139, 92, 246, 0.22)',
+    backgroundElevated: 'rgba(12, 16, 36, 0.94)',
+    textSecondary: 'rgba(226, 232, 240, 0.72)',
+    textMuted: 'rgba(148, 163, 184, 0.9)',
+    accent: '#FF4D6D',
+    accentSecondary: '#22D3EE',
+    accentMuted: 'rgba(255, 77, 109, 0.24)',
+    glowCyan: 'rgba(34, 211, 238, 0.5)',
+    glowRose: 'rgba(255, 77, 109, 0.45)',
+    surfaceBorder: 'rgba(148, 163, 184, 0.18)',
+    tabBar: 'rgba(4, 6, 16, 0.78)',
+    success: '#34D399',
+    warning: '#FBBF24',
+    danger: '#F87171',
+    gradientStart: '#312E81',
+    gradientEnd: '#020617',
   },
 } as const;
 
 export type ThemeColor = keyof typeof Colors.light & keyof typeof Colors.dark;
 
+export const ChaseRiskColors = {
+  calm: '#34D399',
+  watch: '#22D3EE',
+  chase: '#FBBF24',
+  extreme: '#FF4D6D',
+} as const;
+
 export const Fonts = Platform.select({
   ios: {
-    /** iOS `UIFontDescriptorSystemDesignDefault` */
     sans: 'system-ui',
-    /** iOS `UIFontDescriptorSystemDesignSerif` */
     serif: 'ui-serif',
-    /** iOS `UIFontDescriptorSystemDesignRounded` */
     rounded: 'ui-rounded',
-    /** iOS `UIFontDescriptorSystemDesignMonospaced` */
     mono: 'ui-monospace',
   },
   default: {
@@ -58,8 +88,34 @@ export const Spacing = {
   three: 16,
   four: 24,
   five: 32,
-  six: 64,
+  six: 48,
+  seven: 64,
 } as const;
 
-export const BottomTabInset = Platform.select({ ios: 50, android: 80 }) ?? 0;
-export const MaxContentWidth = 800;
+export const Radii = {
+  small: 10,
+  normal: 16,
+  large: 22,
+  pill: 999,
+} as const;
+
+export const Shadows = {
+  elevated: {
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.35,
+    shadowRadius: 16,
+    elevation: 8,
+  },
+  glow: {
+    shadowColor: '#22D3EE',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.35,
+    shadowRadius: 12,
+    elevation: 6,
+  },
+} as const;
+
+export const BottomTabInset = Platform.select({ ios: 50, android: 80, web: 0 }) ?? 0;
+export const WebTopTabInset = Platform.select({ web: 96, default: 0 }) ?? 0;
+export const MaxContentWidth = 860;

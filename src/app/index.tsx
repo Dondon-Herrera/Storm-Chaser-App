@@ -6,7 +6,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
-import { fetchWeatherData, getCurrentLocation, requestLocationPermissions, type WeatherData } from '@/lib/weather';
+import { fetchWeatherData, getCachedWeatherData, getCurrentLocation, requestLocationPermissions, type WeatherData } from '@/lib/weather';
 
 type LoadState = 'loading' | 'ready' | 'not-found' | 'error';
 
@@ -34,6 +34,14 @@ export default function WeatherScreen() {
     try {
       const hasPermission = await requestLocationPermissions();
       if (!hasPermission) {
+        const cachedWeather = await getCachedWeatherData();
+        if (cachedWeather) {
+          setWeather(cachedWeather);
+          setStatus('ready');
+          setMessage('Location access denied: showing last cached weather data.');
+          return;
+        }
+
         setStatus('not-found');
         setMessage('Location access is required to fetch storm-ready weather data.');
         return;
@@ -41,6 +49,14 @@ export default function WeatherScreen() {
 
       const location = await getCurrentLocation();
       if (!location?.coords) {
+        const cachedWeather = await getCachedWeatherData();
+        if (cachedWeather) {
+          setWeather(cachedWeather);
+          setStatus('ready');
+          setMessage('Unable to access location: showing last cached weather data.');
+          return;
+        }
+
         setStatus('not-found');
         setMessage('Unable to determine your current location.');
         return;
@@ -87,6 +103,21 @@ export default function WeatherScreen() {
     }
 
     return null;
+  };
+
+  const renderCacheBanner = () => {
+    if (!weather?.isCached || status !== 'ready') {
+      return null;
+    }
+
+    return (
+      <ThemedView type="backgroundElement" style={styles.statusCard}>
+        <ThemedText type="smallBold">Offline weather</ThemedText>
+        <ThemedText type="small" themeColor="textSecondary" style={styles.cardText}>
+          Showing the last successful forecast stored locally.
+        </ThemedText>
+      </ThemedView>
+    );
   };
 
   const renderWeatherSection = () => {
@@ -173,6 +204,7 @@ export default function WeatherScreen() {
         </ThemedText>
 
         {renderStatusBanner()}
+        {renderCacheBanner()}
         {renderWeatherSection()}
         {renderForecastSection()}
       </ThemedView>

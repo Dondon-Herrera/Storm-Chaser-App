@@ -50,6 +50,34 @@ async function initDb() {
       precipitationProbability REAL
     );`
     );
+
+    await executeSql(
+        `CREATE TABLE IF NOT EXISTS weather_cache (
+      id INTEGER PRIMARY KEY NOT NULL,
+      payload TEXT NOT NULL,
+      updatedAt TEXT NOT NULL
+    );`
+    );
+}
+
+export async function saveCachedWeather(payload: string) {
+    await initDb();
+    await executeSql(
+        `DELETE FROM weather_cache;`
+    );
+    await executeSql(
+        `INSERT INTO weather_cache (payload, updatedAt) VALUES (?, ?);`,
+        [payload, new Date().toISOString()]
+    );
+}
+
+export async function getCachedWeather(): Promise<string | null> {
+    await initDb();
+    const result = await executeSql(`SELECT payload FROM weather_cache ORDER BY updatedAt DESC LIMIT 1;`);
+    if (result.rows.length === 0) {
+        return null;
+    }
+    return result.rows.item(0).payload as string;
 }
 
 export async function saveStormReport(report: StormReport) {

@@ -1,3 +1,4 @@
+import { getCachedWeather, saveCachedWeather } from '@/lib/storage';
 import * as Location from 'expo-location';
 
 export type ForecastDay = {
@@ -19,6 +20,7 @@ export type WeatherData = {
     latitude: number;
     longitude: number;
     forecast: ForecastDay[];
+    isCached?: boolean;
 };
 
 const OPEN_METEO_URL = 'https://api.open-meteo.com/v1/forecast';
@@ -67,7 +69,7 @@ export async function getCurrentLocation() {
     return Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Highest });
 }
 
-export async function fetchWeatherData(latitude: number, longitude: number): Promise<WeatherData> {
+async function fetchWeatherDataOnline(latitude: number, longitude: number): Promise<WeatherData> {
     const query = new URLSearchParams({
         latitude: String(latitude),
         longitude: String(longitude),
@@ -100,7 +102,7 @@ export async function fetchWeatherData(latitude: number, longitude: number): Pro
         }))
         : [];
 
-    return {
+    const weather: WeatherData = {
         temperature: current.temperature,
         windSpeed: current.windspeed,
         precipitationProbability: null,
@@ -111,4 +113,31 @@ export async function fetchWeatherData(latitude: number, longitude: number): Pro
         longitude: data.longitude,
         forecast,
     };
+
+    await saveCachedWeather(JSON.stringify(weather));
+    return weather;
+}
+
+export async function fetchWeatherData(latitude: number, longitude: number): Promise<WeatherData> {
+    try {
+        return await fetchWeatherDataOnline(latitude, longitude);
+    } catch (error) {
+        const cachedPayload = await getCachedWeather();
+        if (!cachedPayload) {
+            throw error;
+        }
+
+        const cached = JSON.parse(cachedPayload) as WeatherData;
+        return { ...cached, isCached: true };
+    }
+}
+
+export async function getCachedWeatherData(): Promise<WeatherData | null> {
+    const cachedPayload = await getCachedWeather();
+    if (!cachedPayload) {
+        return null;
+    }
+
+    const cached = JSON.parse(cachedPayload) as WeatherData;
+    return { ...cached, isCached: true };
 }

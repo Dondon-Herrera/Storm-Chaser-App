@@ -31,7 +31,7 @@ export default function AppTabs() {
       <NativeTabs.Trigger name="map">
         <NativeTabs.Trigger.Label>Map</NativeTabs.Trigger.Label>
         <NativeTabs.Trigger.Icon
-          src={require('@/assets/images/tabIcons/explore.png')}
+          src={require('@/assets/images/tabIcons/map.png')}
           renderingMode="template"
         />
       </NativeTabs.Trigger>

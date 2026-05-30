@@ -1,4 +1,5 @@
 import { ChaseRiskColors } from '@/constants/theme';
+import { formatRainChance } from '@/lib/format-weather';
 import type { WeatherData } from '@/lib/weather';
 
 export type ChaseRiskLevel = 'calm' | 'watch' | 'chase' | 'extreme';
@@ -33,11 +34,11 @@ export function getChaseReadiness(weather: WeatherData): ChaseReadiness {
     factors.push('Strong inflow winds');
   }
 
-  const rain = weather.precipitationProbability ?? 0;
-  if (rain >= 75) {
+  const rain = weather.precipitationProbability;
+  if (rain != null && rain >= 75) {
     score += 20;
     factors.push('High precipitation probability');
-  } else if (rain >= 45) {
+  } else if (rain != null && rain >= 45) {
     score += 10;
     factors.push('Moderate rain chance');
   }
@@ -67,8 +68,10 @@ export function getChaseReadiness(weather: WeatherData): ChaseReadiness {
 }
 
 export function getChaseBrief(weather: WeatherData, readiness: ChaseReadiness): string {
-  const rain = weather.precipitationProbability ?? 0;
-  const base = `${weather.weatherDescription} at ${weather.temperature.toFixed(0)}°C with ${weather.windSpeed.toFixed(0)} km/h winds and ${rain}% rain chance.`;
+  const rainText = formatRainChance(weather.precipitationProbability);
+  const rainPhrase =
+    rainText === 'N/A' ? 'precipitation data unavailable' : `${rainText} rain chance`;
+  const base = `${weather.weatherDescription} at ${weather.temperature.toFixed(0)}°C with ${weather.windSpeed.toFixed(0)} km/h winds and ${rainPhrase}.`;
 
   switch (readiness.level) {
     case 'extreme':

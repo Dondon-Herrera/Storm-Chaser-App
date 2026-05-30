@@ -20,7 +20,10 @@ export function MetricTile({ label, value, icon, minWidth, accentColor }: Metric
   const tint = accentColor ?? theme.accentSecondary;
 
   return (
-    <Card style={[styles.tile, minWidth != null && { minWidth }]}>
+    <Card
+      style={[styles.tile, minWidth != null && { minWidth }]}
+      accessible
+      accessibilityLabel={`${label}: ${value}`}>
       <View style={[styles.iconWrap, { backgroundColor: `${tint}22` }]}>
         <SymbolView name={icon} size={18} tintColor={tint} />
       </View>

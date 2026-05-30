@@ -1,16 +1,19 @@
 import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, StyleSheet, View } from 'react-native';
+import { Alert, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { ScreenHeader } from '@/components/ui/screen-header';
 import { ScreenShell } from '@/components/ui/screen-shell';
+import { SkeletonCard } from '@/components/ui/skeleton';
 import { useTheme } from '@/hooks/use-theme';
+import { formatRainChance } from '@/lib/format-weather';
 import { navigateToCellWithFeedback } from '@/lib/map-utils';
 import { navigateTo } from '@/lib/navigation';
+import { parseReportIdParam } from '@/lib/report-params';
 import { getStormTypeColor } from '@/lib/storm-intelligence';
 import { deleteStormReport, getStormReportById, type StormReport } from '@/lib/storage';
 
@@ -18,38 +21,48 @@ export default function StormReportDetailScreen() {
   const { id } = useLocalSearchParams();
   const [report, setReport] = useState<StormReport | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [photoFailed, setPhotoFailed] = useState(false);
   const router = useRouter();
   const theme = useTheme();
+  const reportId = parseReportIdParam(id);
 
   useEffect(() => {
-    if (typeof id !== 'string') {
+    if (reportId == null) {
       return;
     }
 
     let cancelled = false;
-    const reportId = Number(id);
 
-    void getStormReportById(reportId)
-      .then((stored) => {
-        if (!cancelled && stored) {
+    void (async () => {
+      setLoading(true);
+      setError(null);
+
+      try {
+        const stored = await getStormReportById(reportId);
+        if (!cancelled) {
           setReport(stored);
         }
-      })
-      .catch((error) => console.error(error))
-      .finally(() => {
+      } catch (err) {
+        console.error(err);
+        if (!cancelled) {
+          setError('Could not load this intercept. Try again.');
+        }
+      } finally {
         if (!cancelled) {
           setLoading(false);
         }
-      });
+      }
+    })();
 
     return () => {
       cancelled = true;
     };
-  }, [id]);
+  }, [reportId]);
 
   function handleDeleteReport() {
-    const reportId = report?.id;
-    if (reportId == null) {
+    const deleteId = report?.id;
+    if (deleteId == null) {
       return;
     }
 
@@ -59,9 +72,11 @@ export default function StormReportDetailScreen() {
         text: 'Delete',
         style: 'destructive',
         onPress: () => {
-          void deleteStormReport(reportId)
+          void deleteStormReport(deleteId)
             .then(() => navigateTo(router, '/log'))
-            .catch((error) => console.error(error));
+            .catch(() => {
+              Alert.alert('Delete failed', 'Could not remove this report. Please try again.');
+            });
         },
       },
     ]);
@@ -85,14 +100,48 @@ export default function StormReportDetailScreen() {
         subtitle="Full metadata, evidence, and navigation for this documented cell."
       />
 
-      {loading ? (
-        <Card style={styles.loading}>
-          <ActivityIndicator color={theme.accentSecondary} />
-          <ThemedText type="small">Loading dossier…</ThemedText>
+      {reportId == null ? (
+        <Card style={styles.cardGap}>
+          <ThemedText type="title" accessibilityRole="header">
+            Not Found
+          </ThemedText>
+          <ThemedText type="small" themeColor="textSecondary">
+            This intercept may have been removed or the link is invalid.
+          </ThemedText>
+          <Button title="Back to archive" onPress={() => navigateTo(router, '/log')} />
+        </Card>
+      ) : loading ? (
+        <SkeletonCard>
+          <ThemedText type="small" themeColor="textSecondary">
+            Loading dossier…
+          </ThemedText>
+        </SkeletonCard>
+      ) : error ? (
+        <Card style={styles.cardGap}>
+          <ThemedText type="smallBold">Dossier unavailable</ThemedText>
+          <ThemedText type="small" themeColor="textSecondary">
+            {error}
+          </ThemedText>
+          <Button title="Back to archive" onPress={() => navigateTo(router, '/log')} />
         </Card>
       ) : report ? (
         <>
-          <Image source={{ uri: report.photoUri }} style={[styles.image, { borderColor: accent }]} contentFit="cover" />
+          {photoFailed ? (
+            <Card style={styles.cardGap}>
+              <ThemedText type="smallBold">Photo unavailable</ThemedText>
+              <ThemedText type="small" themeColor="textSecondary">
+                The image file could not be loaded from device storage.
+              </ThemedText>
+            </Card>
+          ) : (
+            <Image
+              source={{ uri: report.photoUri }}
+              style={[styles.image, { borderColor: accent }]}
+              contentFit="cover"
+              accessibilityLabel={`Storm photo for ${report.stormType}`}
+              onError={() => setPhotoFailed(true)}
+            />
+          )}
 
           <Card style={[styles.heroMeta, { borderLeftColor: accent, borderLeftWidth: 4 }]}>
             <ThemedText type="smallBold" style={{ color: accent }}>
@@ -102,7 +151,7 @@ export default function StormReportDetailScreen() {
             <View style={styles.metricRow}>
               <ThemedText type="smallBold">{report.temperature.toFixed(1)}°C</ThemedText>
               <ThemedText type="smallBold">{report.windSpeed.toFixed(0)} km/h</ThemedText>
-              <ThemedText type="smallBold">Rain {report.precipitationProbability ?? 0}%</ThemedText>
+              <ThemedText type="smallBold">Rain {formatRainChance(report.precipitationProbability)}</ThemedText>
             </View>
           </Card>
 
@@ -129,10 +178,10 @@ export default function StormReportDetailScreen() {
           </View>
         </>
       ) : (
-        <Card>
+        <Card style={styles.cardGap}>
           <ThemedText type="smallBold">Report not found</ThemedText>
           <ThemedText type="small" themeColor="textSecondary">
-            This intercept may have been removed.
+            This intercept may have been removed from the field archive.
           </ThemedText>
           <Button title="Back to archive" onPress={() => navigateTo(router, '/log')} />
         </Card>
@@ -142,9 +191,7 @@ export default function StormReportDetailScreen() {
 }
 
 const styles = StyleSheet.create({
-  loading: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  cardGap: {
     gap: 12,
   },
   image: {

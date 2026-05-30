@@ -1,7 +1,7 @@
 import { Image } from 'expo-image';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, RefreshControl, StyleSheet, View } from 'react-native';
+import { Pressable, RefreshControl, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { Button } from '@/components/ui/button';
@@ -9,11 +9,14 @@ import { Card } from '@/components/ui/card';
 import { Icons } from '@/components/ui/icons';
 import { IconAction } from '@/components/ui/icon-action';
 import { ScreenHeader } from '@/components/ui/screen-header';
+import { CloudSyncPanel } from '@/components/ui/cloud-sync-panel';
 import { ScreenShell } from '@/components/ui/screen-shell';
+import { SkeletonReportList } from '@/components/ui/skeleton';
 import { useResponsiveLayout } from '@/hooks/use-responsive-layout';
 import { useTheme } from '@/hooks/use-theme';
 import { navigateTo } from '@/lib/navigation';
 import { getStormTypeColor } from '@/lib/storm-intelligence';
+import { formatRainChance } from '@/lib/format-weather';
 import { getStormReports, type StormReport } from '@/lib/storage';
 
 export default function StormLogScreen() {
@@ -85,22 +88,30 @@ export default function StormLogScreen() {
             <ThemedText type="small" themeColor="textMuted">
               Reports
             </ThemedText>
-            <ThemedText style={styles.statNum}>{summary.total}</ThemedText>
+            <ThemedText type="title" style={styles.statNum}>
+              {summary.total}
+            </ThemedText>
           </Card>
           <Card style={styles.stat}>
             <ThemedText type="small" themeColor="textMuted">
               Types
             </ThemedText>
-            <ThemedText style={styles.statNum}>{summary.types}</ThemedText>
+            <ThemedText type="title" style={styles.statNum}>
+              {summary.types}
+            </ThemedText>
           </Card>
           <Card style={styles.stat}>
             <ThemedText type="small" themeColor="textMuted">
               Peak wind
             </ThemedText>
-            <ThemedText style={styles.statNum}>{summary.strongest.windSpeed.toFixed(0)}</ThemedText>
+            <ThemedText type="title" style={styles.statNum}>
+              {summary.strongest.windSpeed.toFixed(0)}
+            </ThemedText>
           </Card>
         </View>
       ) : null}
+
+      <CloudSyncPanel reports={reports} />
 
       {error ? (
         <Card style={styles.empty}>
@@ -111,12 +122,12 @@ export default function StormLogScreen() {
           <Button title="Retry" onPress={reloadReports} />
         </Card>
       ) : loading ? (
-        <Card style={styles.loading}>
-          <ActivityIndicator color={theme.accentSecondary} />
+        <>
           <ThemedText type="small" themeColor="textSecondary">
             Syncing field archive…
           </ThemedText>
-        </Card>
+          <SkeletonReportList count={2} />
+        </>
       ) : reports.length === 0 ? (
         <Card style={styles.empty}>
           <ThemedText type="smallBold">Archive empty</ThemedText>
@@ -131,6 +142,8 @@ export default function StormLogScreen() {
           return (
             <Pressable
               key={report.id?.toString() ?? report.dateTime}
+              accessibilityRole="button"
+              accessibilityLabel={`${report.stormType} intercept on ${new Date(report.dateTime).toLocaleDateString()}`}
               onPress={() => report.id != null && navigateTo(router, `/log/${report.id}`)}>
               <Card style={[styles.reportCard, { borderLeftColor: accent, borderLeftWidth: 4 }]}>
                 <View style={styles.reportTop}>
@@ -155,7 +168,7 @@ export default function StormLogScreen() {
                     {report.latitude.toFixed(2)}°, {report.longitude.toFixed(2)}°
                   </ThemedText>
                   <ThemedText type="small" style={{ color: theme.accentSecondary }}>
-                    {report.windSpeed.toFixed(0)} km/h · Rain {report.precipitationProbability ?? 0}%
+                    {report.windSpeed.toFixed(0)} km/h · Rain {formatRainChance(report.precipitationProbability)}
                   </ThemedText>
                 </View>
               </Card>
@@ -178,8 +191,7 @@ const styles = StyleSheet.create({
   },
   statNum: {
     fontSize: 26,
-    fontWeight: '700',
-    color: '#fff',
+    lineHeight: 30,
   },
   loading: {
     flexDirection: 'row',

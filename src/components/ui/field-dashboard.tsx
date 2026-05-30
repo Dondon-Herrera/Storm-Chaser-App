@@ -32,25 +32,35 @@ export function FieldDashboardCard({ data, onOpenLog, onOpenMap, onOpenLatest }:
 
       <View style={styles.statsRow}>
         <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`Storm log archive, ${data.reportCount} reports`}
           style={[styles.statBox, { borderColor: theme.surfaceBorder, backgroundColor: theme.backgroundSelected }]}
           onPress={onOpenLog}>
           <ThemedText type="small" themeColor="textMuted">
             Archive
           </ThemedText>
-          <ThemedText style={styles.statValue}>{data.reportCount}</ThemedText>
+          <ThemedText type="title" style={styles.statValue}>
+            {data.reportCount}
+          </ThemedText>
         </Pressable>
         <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Open tactical storm map"
           style={[styles.statBox, { borderColor: theme.surfaceBorder, backgroundColor: theme.backgroundSelected }]}
           onPress={onOpenMap}>
           <ThemedText type="small" themeColor="textMuted">
             Map
           </ThemedText>
-          <ThemedText style={styles.statValue}>Live</ThemedText>
+          <ThemedText type="title" style={styles.statValue}>
+            Live
+          </ThemedText>
         </Pressable>
       </View>
 
       {latest ? (
         <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`Latest intercept ${latest.stormType}`}
           onPress={onOpenLatest}
           style={[styles.latestRow, { borderColor: accent, backgroundColor: theme.backgroundSelected }]}>
           <View style={[styles.dot, { backgroundColor: accent }]} />
@@ -93,8 +103,7 @@ const styles = StyleSheet.create({
   },
   statValue: {
     fontSize: 22,
-    fontWeight: '700',
-    color: '#fff',
+    lineHeight: 26,
   },
   latestRow: {
     flexDirection: 'row',

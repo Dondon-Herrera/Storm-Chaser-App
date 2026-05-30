@@ -15,9 +15,8 @@ export function useNwsAlerts() {
       const active = await fetchActiveNwsAlerts(latitude, longitude);
       setAlerts(active);
     } catch (err) {
-      console.error(err);
       setAlerts([]);
-      setError('Official NWS alerts could not be loaded.');
+      setError(err instanceof Error ? err.message : 'Official NWS alerts could not be loaded.');
     } finally {
       setLoading(false);
     }

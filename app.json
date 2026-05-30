@@ -10,10 +10,13 @@
     "ios": {
       "icon": "./assets/expo.icon",
       "infoPlist": {
+        "NSCameraUsageDescription": "Storm Chaser needs camera access to capture photo evidence of storm events.",
+        "NSPhotoLibraryUsageDescription": "Storm Chaser can attach storm photos from your photo library when documenting intercepts.",
         "LSApplicationQueriesSchemes": ["maps", "comgooglemaps", "waze"]
       }
     },
     "android": {
+      "permissions": ["ACCESS_COARSE_LOCATION", "ACCESS_FINE_LOCATION", "CAMERA"],
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -27,6 +30,13 @@
       "favicon": "./assets/images/favicon.png"
     },
     "plugins": [
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "Storm Chaser needs camera access to capture photo evidence of storm events.",
+          "photosPermission": "Storm Chaser can attach storm photos from your library when documenting intercepts."
+        }
+      ],
       [
         "expo-location",
         {

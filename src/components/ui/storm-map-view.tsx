@@ -19,6 +19,7 @@ type StormMapViewProps = {
 export function StormMapView({ reports, highlightId, userLat, userLon, selectedLabel }: StormMapViewProps) {
   const theme = useTheme();
   const [imageFailed, setImageFailed] = useState(false);
+  const [imageLoaded, setImageLoaded] = useState(false);
   const mapImageUrl = useMemo(
     () => buildStormMapUrl(reports, { highlightId, userLat, userLon, height: 480 }),
     [reports, highlightId, userLat, userLon]
@@ -90,12 +91,15 @@ export function StormMapView({ reports, highlightId, userLat, userLon, selectedL
         source={{ uri: mapImageUrl }}
         style={styles.image}
         contentFit="cover"
+        onLoad={() => setImageLoaded(true)}
         onError={() => setImageFailed(true)}
         placeholder={{ blurhash: 'L6PZfSi_.AyE_3t7t7R**0o#DgR4' }}
       />
-      <View style={styles.loadingBadge}>
-        <ActivityIndicator color={theme.accentSecondary} size="small" />
-      </View>
+      {!imageLoaded && !imageFailed ? (
+        <View style={styles.loadingBadge}>
+          <ActivityIndicator color={theme.accentSecondary} size="small" />
+        </View>
+      ) : null}
       <View style={[styles.caption, { backgroundColor: theme.backgroundElevated }]}>
         <ThemedText type="smallBold">{selectedLabel ?? 'Storm map'}</ThemedText>
         <ThemedText type="small" themeColor="textSecondary">

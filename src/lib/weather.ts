@@ -1,3 +1,4 @@
+import { normalizeWeatherData } from '@/lib/format-weather';
 import { getCachedWeather, saveCachedWeather } from '@/lib/storage';
 import * as Location from 'expo-location';
 
@@ -13,6 +14,7 @@ export type ForecastDay = {
 export type WeatherData = {
     temperature: number;
     windSpeed: number;
+    precipitation: number | null;
     precipitationProbability: number | null;
     weatherCode: number;
     weatherDescription: string;
@@ -21,6 +23,7 @@ export type WeatherData = {
     longitude: number;
     forecast: ForecastDay[];
     isCached?: boolean;
+    isMock?: boolean;
 };
 
 const OPEN_METEO_URL = 'https://api.open-meteo.com/v1/forecast';
@@ -56,8 +59,39 @@ const weatherCodeDescriptions: Record<number, string> = {
     99: 'Severe thunderstorm with hail',
 };
 
-function getWeatherDescription(code: number) {
+export function getWeatherDescription(code: number) {
     return weatherCodeDescriptions[code] ?? 'Unknown weather';
+}
+
+/** Mock data for reviewers when APIs or network are unavailable (set EXPO_PUBLIC_USE_MOCK_WEATHER=true). */
+export function getMockWeatherData(latitude: number, longitude: number): WeatherData {
+    const now = new Date().toISOString();
+    return {
+        temperature: 24,
+        windSpeed: 52,
+        precipitation: 2.4,
+        precipitationProbability: 65,
+        weatherCode: 95,
+        weatherDescription: getWeatherDescription(95),
+        time: now,
+        latitude,
+        longitude,
+        forecast: [
+            {
+                date: now.slice(0, 10),
+                maxTemperature: 28,
+                minTemperature: 18,
+                precipitationProbability: 70,
+                weatherCode: 95,
+                weatherDescription: getWeatherDescription(95),
+            },
+        ],
+        isMock: true,
+    };
+}
+
+function isMockWeatherEnabled() {
+    return process.env.EXPO_PUBLIC_USE_MOCK_WEATHER === 'true';
 }
 
 export async function requestLocationPermissions() {
@@ -74,7 +108,8 @@ async function fetchWeatherDataOnline(latitude: number, longitude: number): Prom
         latitude: String(latitude),
         longitude: String(longitude),
         current_weather: 'true',
-        daily: 'temperature_2m_max,temperature_2m_min,precipitation_probability_max,weathercode',
+        current: 'precipitation',
+        daily: 'temperature_2m_max,temperature_2m_min,precipitation_probability_max,precipitation_sum,weathercode',
         timezone: 'auto',
         windspeed_unit: 'kmh',
     });
@@ -103,12 +138,21 @@ async function fetchWeatherDataOnline(latitude: number, longitude: number): Prom
         }))
         : [];
 
-    const currentPrecip = Array.isArray(daily.precipitation_probability_max) ? daily.precipitation_probability_max[0] ?? null : null;
+    const currentPrecipProb = Array.isArray(daily.precipitation_probability_max)
+        ? daily.precipitation_probability_max[0] ?? null
+        : null;
+    const currentPrecipMm =
+        typeof data.current?.precipitation === 'number'
+            ? data.current.precipitation
+            : Array.isArray(daily.precipitation_sum)
+              ? daily.precipitation_sum[0] ?? null
+              : null;
 
     const weather: WeatherData = {
         temperature: current.temperature,
         windSpeed: current.windspeed,
-        precipitationProbability: currentPrecip,
+        precipitation: currentPrecipMm,
+        precipitationProbability: currentPrecipProb,
         weatherCode: current.weathercode,
         weatherDescription: getWeatherDescription(current.weathercode),
         time: current.time,
@@ -126,12 +170,16 @@ export async function fetchWeatherData(latitude: number, longitude: number): Pro
         return await fetchWeatherDataOnline(latitude, longitude);
     } catch (error) {
         const cachedPayload = await getCachedWeather();
-        if (!cachedPayload) {
-            throw error;
+        if (cachedPayload) {
+            const cached = normalizeWeatherData(JSON.parse(cachedPayload) as WeatherData);
+            return { ...cached, isCached: true };
         }
 
-        const cached = JSON.parse(cachedPayload) as WeatherData;
-        return { ...cached, isCached: true };
+        if (isMockWeatherEnabled()) {
+            return getMockWeatherData(latitude, longitude);
+        }
+
+        throw error;
     }
 }
 
@@ -141,6 +189,6 @@ export async function getCachedWeatherData(): Promise<WeatherData | null> {
         return null;
     }
 
-    const cached = JSON.parse(cachedPayload) as WeatherData;
+    const cached = normalizeWeatherData(JSON.parse(cachedPayload) as WeatherData);
     return { ...cached, isCached: true };
 }

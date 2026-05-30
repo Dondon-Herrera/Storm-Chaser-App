@@ -1,6 +1,6 @@
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { Button } from '@/components/ui/button';
@@ -10,6 +10,7 @@ import { Icons } from '@/components/ui/icons';
 import { IconAction } from '@/components/ui/icon-action';
 import { ScreenHeader } from '@/components/ui/screen-header';
 import { ScreenShell } from '@/components/ui/screen-shell';
+import { SkeletonMapPanel } from '@/components/ui/skeleton';
 import { StormMapView } from '@/components/ui/storm-map-view';
 import { useResponsiveLayout } from '@/hooks/use-responsive-layout';
 import { useTheme } from '@/hooks/use-theme';
@@ -26,11 +27,18 @@ export default function MapScreen() {
   const [filter, setFilter] = useState<string>('All');
   const [selectedId, setSelectedId] = useState<number | undefined>();
   const [userCoords, setUserCoords] = useState<{ lat: number; lon: number } | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const { titleFontSize, subtitleFontSize } = useResponsiveLayout();
   const theme = useTheme();
 
-  const reloadMap = useCallback(() => {
-    setLoading(true);
+  const reloadMap = useCallback((isPullRefresh = false) => {
+    if (isPullRefresh) {
+      setRefreshing(true);
+    } else {
+      setLoading(true);
+    }
+    setError(null);
 
     void Promise.all([getStormReports(), getCachedWeatherData()])
       .then(([stored, weather]) => {
@@ -42,8 +50,14 @@ export default function MapScreen() {
           setSelectedId(stored[0].id);
         }
       })
-      .catch((error) => console.error(error))
-      .finally(() => setLoading(false));
+      .catch((err) => {
+        console.error(err);
+        setError('Could not load map data. Pull to refresh or try again.');
+      })
+      .finally(() => {
+        setLoading(false);
+        setRefreshing(false);
+      });
   }, []);
 
   useFocusEffect(
@@ -95,7 +109,14 @@ export default function MapScreen() {
   const canShowMap = reports.length > 0 || userCoords != null;
 
   return (
-    <ScreenShell>
+    <ScreenShell
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={() => reloadMap(true)}
+          tintColor={theme.accentSecondary}
+        />
+      }>
       <ScreenHeader
         eyebrow="Tactical view"
         title="Storm Radar Map"
@@ -105,18 +126,28 @@ export default function MapScreen() {
         actions={
           <>
             <IconAction label="New report" icon={Icons.add} variant="primary" onPress={() => navigateTo(router, '/log/new')} />
-            <IconAction label="Refresh" icon={Icons.refresh} onPress={reloadMap} disabled={loading} />
+            <IconAction label="Refresh" icon={Icons.refresh} onPress={() => reloadMap(false)} disabled={loading} />
           </>
         }
       />
 
+      {error ? (
+        <Card style={styles.emptyCard}>
+          <ThemedText type="smallBold">Map unavailable</ThemedText>
+          <ThemedText type="small" themeColor="textSecondary">
+            {error}
+          </ThemedText>
+          <Button title="Retry" onPress={() => reloadMap(false)} />
+        </Card>
+      ) : null}
+
       {loading ? (
-        <Card style={styles.loadingCard}>
-          <ActivityIndicator color={theme.accentSecondary} />
+        <>
           <ThemedText type="small" themeColor="textSecondary">
             Plotting storm coordinates…
           </ThemedText>
-        </Card>
+          <SkeletonMapPanel />
+        </>
       ) : !canShowMap ? (
         <Card style={styles.emptyCard}>
           <ThemedText type="smallBold">No coordinates yet</ThemedText>
@@ -180,6 +211,16 @@ export default function MapScreen() {
             </ScrollView>
           ) : null}
 
+          {filter !== 'All' && reports.length > 0 && filteredReports.length === 0 ? (
+            <Card style={styles.emptyCard}>
+              <ThemedText type="smallBold">No {filter} intercepts</ThemedText>
+              <ThemedText type="small" themeColor="textSecondary">
+                Try another classification or log a new storm report.
+              </ThemedText>
+              <Button title="Clear filter" variant="outline" onPress={() => setFilter('All')} />
+            </Card>
+          ) : null}
+
           <Pressable
             onPress={() => {
               if (selectedReport) {
@@ -193,7 +234,7 @@ export default function MapScreen() {
               }
             }}>
             <StormMapView
-              reports={filteredReports.length ? filteredReports : reports}
+              reports={filteredReports}
               highlightId={selectedReport?.id}
               userLat={userCoords?.lat}
               userLon={userCoords?.lon}

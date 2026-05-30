@@ -18,6 +18,8 @@ export function ChaseAlertBanner({ readiness }: ChaseAlertBannerProps) {
 
   return (
     <View
+      accessibilityRole="alert"
+      accessibilityLabel={`${isExtreme ? 'Extreme chase conditions' : 'Active chase window'}. Score ${readiness.score} out of 100.`}
       style={[
         styles.banner,
         {

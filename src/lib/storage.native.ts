@@ -43,6 +43,16 @@ async function initDb() {
       payload TEXT NOT NULL,
       updatedAt TEXT NOT NULL
     );`);
+
+    await migrateStormReportsTable(db);
+}
+
+async function migrateStormReportsTable(db: SQLite.SQLiteDatabase) {
+    const columns = await db.getAllAsync<{ name: string }>(`PRAGMA table_info(storm_reports);`);
+    const names = new Set(columns.map((column) => column.name));
+    if (!names.has('precipitationProbability')) {
+        await db.execAsync(`ALTER TABLE storm_reports ADD COLUMN precipitationProbability REAL;`);
+    }
 }
 
 export async function saveCachedWeather(payload: string) {

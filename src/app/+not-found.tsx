@@ -9,7 +9,10 @@ export default function NotFoundScreen() {
   return (
     <ScreenShell>
       <View style={styles.content}>
-        <ThemedText type="title" style={styles.title}>
+        <ThemedText type="title" style={styles.title} accessibilityRole="header">
+          Not Found
+        </ThemedText>
+        <ThemedText type="smallBold" themeColor="textMuted">
           Off the radar
         </ThemedText>
         <ThemedText type="small" themeColor="textSecondary" style={styles.subtitle}>

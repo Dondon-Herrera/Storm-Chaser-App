@@ -1,6 +1,6 @@
 import { useRouter } from 'expo-router';
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, RefreshControl, StyleSheet, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { RefreshControl, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { Button } from '@/components/ui/button';
@@ -18,20 +18,16 @@ import { notifyChaseReadiness } from '@/lib/notifications';
 import { MetricTile } from '@/components/ui/metric-tile';
 import { ScreenHeader } from '@/components/ui/screen-header';
 import { ScreenShell } from '@/components/ui/screen-shell';
+import { SkeletonMetricGrid, SkeletonWeatherHero } from '@/components/ui/skeleton';
 import { useFieldDashboard } from '@/hooks/use-field-dashboard';
 import { useResponsiveLayout } from '@/hooks/use-responsive-layout';
 import { useTheme } from '@/hooks/use-theme';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
+import { loadWeatherForDevice } from '@/lib/load-weather';
 import { getChaseBrief, getChaseReadiness } from '@/lib/storm-intelligence';
-import {
-  fetchWeatherData,
-  getCachedWeatherData,
-  getCurrentLocation,
-  requestLocationPermissions,
-  type WeatherData,
-} from '@/lib/weather';
+import type { WeatherData } from '@/lib/weather';
 
-type LoadState = 'loading' | 'ready' | 'not-found' | 'error';
+type LoadState = 'loading' | 'ready' | 'not-found';
 
 export default function WeatherScreen() {
   const router = useRouter();
@@ -41,56 +37,45 @@ export default function WeatherScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const fieldDashboard = useFieldDashboard();
   const nwsAlerts = useNwsAlerts();
+  const nwsCoordsKeyRef = useRef<string | null>(null);
   const { titleFontSize, subtitleFontSize, metricMinWidth } = useResponsiveLayout();
   const theme = useTheme();
 
+  const applyWeatherResult = useCallback(
+    (result: Awaited<ReturnType<typeof loadWeatherForDevice>>, options?: { hapticOnSuccess?: boolean }) => {
+      if (result.status === 'ready') {
+        setWeather(result.weather);
+        setStatus('ready');
+        if (result.message) {
+          setMessage(result.message);
+        }
+        if (options?.hapticOnSuccess) {
+          void hapticSuccess();
+        }
+        return;
+      }
+
+      setWeather(null);
+      setStatus('not-found');
+      setMessage(result.message);
+      if (options?.hapticOnSuccess) {
+        void hapticWarning();
+      }
+    },
+    []
+  );
+
   const refreshWeather = useCallback(async () => {
     setRefreshing(true);
-    setStatus('loading');
-    setMessage('Scanning atmosphere near your position…');
-
-    try {
-      const hasPermission = await requestLocationPermissions();
-      if (!hasPermission) {
-        const cachedWeather = await getCachedWeatherData();
-        if (cachedWeather) {
-          setWeather(cachedWeather);
-          setStatus('ready');
-          setMessage('Location off — showing cached intelligence.');
-          return;
-        }
-        setStatus('not-found');
-        setMessage('Enable location for live storm intelligence.');
-        return;
-      }
-
-      const location = await getCurrentLocation();
-      if (!location?.coords) {
-        const cachedWeather = await getCachedWeatherData();
-        if (cachedWeather) {
-          setWeather(cachedWeather);
-          setStatus('ready');
-          setMessage('GPS unavailable — cached data loaded.');
-          return;
-        }
-        setStatus('not-found');
-        setMessage('Could not resolve your chase coordinates.');
-        return;
-      }
-
-      const weatherData = await fetchWeatherData(location.coords.latitude, location.coords.longitude);
-      setWeather(weatherData);
-      setStatus('ready');
-      void hapticSuccess();
-    } catch (error) {
-      console.error(error);
-      setStatus('error');
-      setMessage('Forecast uplink failed. Pull to refresh.');
-      void hapticWarning();
-    } finally {
-      setRefreshing(false);
+    if (!weather) {
+      setStatus('loading');
+      setMessage('Scanning atmosphere near your position…');
     }
-  }, []);
+
+    const result = await loadWeatherForDevice();
+    applyWeatherResult(result, { hapticOnSuccess: true });
+    setRefreshing(false);
+  }, [applyWeatherResult, weather]);
 
   const readiness = useMemo(() => (weather ? getChaseReadiness(weather) : null), [weather]);
 
@@ -99,67 +84,41 @@ export default function WeatherScreen() {
     [weather, readiness]
   );
 
+  const showDashboard = weather != null && readiness != null && status !== 'not-found';
+
   useEffect(() => {
-    if (status !== 'ready' || !weather) {
+    if (!showDashboard || !weather) {
+      nwsCoordsKeyRef.current = null;
       return;
     }
+
+    const coordsKey = `${weather.latitude},${weather.longitude}`;
+    if (nwsCoordsKeyRef.current === coordsKey) {
+      return;
+    }
+    nwsCoordsKeyRef.current = coordsKey;
 
     const currentReadiness = getChaseReadiness(weather);
     void notifyChaseReadiness(currentReadiness);
     void nwsAlerts.loadAlerts(weather.latitude, weather.longitude);
-  }, [weather, status, nwsAlerts.loadAlerts]);
+    // Only stable primitives + loadAlerts — never the whole `nwsAlerts` object (new reference each render → infinite loop).
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- weather lat/lon covered above
+  }, [weather?.latitude, weather?.longitude, showDashboard, nwsAlerts.loadAlerts]);
 
   useEffect(() => {
     let cancelled = false;
 
     void (async () => {
-      try {
-        const hasPermission = await requestLocationPermissions();
-        if (!hasPermission) {
-          const cachedWeather = await getCachedWeatherData();
-          if (!cancelled && cachedWeather) {
-            setWeather(cachedWeather);
-            setStatus('ready');
-            setMessage('Location off — showing cached intelligence.');
-          } else if (!cancelled) {
-            setStatus('not-found');
-            setMessage('Enable location for live storm intelligence.');
-          }
-          return;
-        }
-
-        const location = await getCurrentLocation();
-        if (!location?.coords) {
-          const cachedWeather = await getCachedWeatherData();
-          if (!cancelled && cachedWeather) {
-            setWeather(cachedWeather);
-            setStatus('ready');
-            setMessage('GPS unavailable — cached data loaded.');
-          } else if (!cancelled) {
-            setStatus('not-found');
-            setMessage('Could not resolve your chase coordinates.');
-          }
-          return;
-        }
-
-        const weatherData = await fetchWeatherData(location.coords.latitude, location.coords.longitude);
-        if (!cancelled) {
-          setWeather(weatherData);
-          setStatus('ready');
-        }
-      } catch (error) {
-        console.error(error);
-        if (!cancelled) {
-          setStatus('error');
-          setMessage('Forecast uplink failed. Pull to refresh.');
-        }
+      const result = await loadWeatherForDevice();
+      if (!cancelled) {
+        applyWeatherResult(result);
       }
     })();
 
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [applyWeatherResult]);
 
   return (
     <ScreenShell
@@ -199,25 +158,39 @@ export default function WeatherScreen() {
       />
 
       {status === 'loading' && !weather ? (
-        <Card style={styles.statusCard}>
-          <ActivityIndicator color={theme.accentSecondary} />
+        <>
           <ThemedText type="small" themeColor="textSecondary">
             {message}
+          </ThemedText>
+          <SkeletonWeatherHero />
+          <SkeletonMetricGrid />
+        </>
+      ) : null}
+
+      {status === 'not-found' && !weather ? (
+        <Card style={styles.statusCard} accessibilityRole="alert">
+          <ThemedText type="title" accessibilityRole="header">
+            Not Found
+          </ThemedText>
+          <ThemedText type="small" themeColor="textSecondary">
+            {message}
+          </ThemedText>
+          <Button title="Try again" onPress={refreshWeather} size="lg" />
+        </Card>
+      ) : null}
+
+      {weather?.isMock && showDashboard ? (
+        <Card style={styles.mockBanner}>
+          <ThemedText type="smallBold" style={{ color: theme.warning }}>
+            Mock weather data
+          </ThemedText>
+          <ThemedText type="small" themeColor="textSecondary">
+            EXPO_PUBLIC_USE_MOCK_WEATHER is enabled for assessment demos.
           </ThemedText>
         </Card>
       ) : null}
 
-      {(status === 'not-found' || status === 'error') && !weather ? (
-        <Card style={styles.statusCard}>
-          <ThemedText type="smallBold">Signal lost</ThemedText>
-          <ThemedText type="small" themeColor="textSecondary">
-            {message}
-          </ThemedText>
-          <Button title="Reconnect" onPress={refreshWeather} size="lg" />
-        </Card>
-      ) : null}
-
-      {weather?.isCached && status === 'ready' ? (
+      {weather?.isCached && showDashboard ? (
         <Card style={styles.offlineBanner}>
           <ThemedText type="smallBold" style={{ color: theme.warning }}>
             Offline mode
@@ -228,7 +201,7 @@ export default function WeatherScreen() {
         </Card>
       ) : null}
 
-      {weather && readiness && status === 'ready' ? (
+      {showDashboard && weather && readiness ? (
         <>
           <ChaseAlertBanner readiness={readiness} />
           <NwsAlertsPanel alerts={nwsAlerts.alerts} loading={nwsAlerts.loading} error={nwsAlerts.error} />
@@ -237,11 +210,17 @@ export default function WeatherScreen() {
           <View style={styles.metricsGrid}>
             <MetricTile label="Wind" value={`${weather.windSpeed.toFixed(0)} km/h`} icon={Icons.wind} minWidth={metricMinWidth} />
             <MetricTile
+              label="Precipitation"
+              value={weather.precipitation != null ? `${weather.precipitation.toFixed(1)} mm` : '—'}
+              icon={Icons.rain}
+              minWidth={metricMinWidth}
+              accentColor={theme.accent}
+            />
+            <MetricTile
               label="Rain chance"
               value={weather.precipitationProbability != null ? `${weather.precipitationProbability}%` : '—'}
               icon={Icons.rain}
               minWidth={metricMinWidth}
-              accentColor={theme.accent}
             />
             <MetricTile
               label="Coordinates"
@@ -285,14 +264,16 @@ export default function WeatherScreen() {
 }
 
 const styles = StyleSheet.create({
-  statusCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
   offlineBanner: {
     borderLeftWidth: 3,
     borderLeftColor: '#FBBF24',
+  },
+  mockBanner: {
+    borderLeftWidth: 3,
+    borderLeftColor: '#F59E0B',
+  },
+  statusCard: {
+    gap: 12,
   },
   metricsGrid: {
     flexDirection: 'row',

@@ -18,6 +18,9 @@ export function FilterChip({ label, selected, onPress, color }: FilterChipProps)
   return (
     <Pressable
       onPress={onPress}
+      accessibilityRole="button"
+      accessibilityState={{ selected: !!selected }}
+      accessibilityLabel={`${label} filter${selected ? ', selected' : ''}`}
       style={[
         styles.chip,
         {

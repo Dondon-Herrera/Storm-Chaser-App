@@ -35,3 +35,17 @@ body {
   -moz-osx-font-smoothing: grayscale;
   margin: 0;
 }
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --color-bg: #f1f5f9;
+    --color-surface: rgba(255, 255, 255, 0.92);
+    --color-surface-elevated: rgba(248, 250, 252, 0.98);
+    --color-muted: rgba(100, 116, 139, 0.95);
+    --color-text: #0f172a;
+    --color-accent: #e11d48;
+    --color-accent-secondary: #0284c7;
+    --shadow-glow: 0 0 20px rgba(2, 132, 199, 0.15);
+    --shadow-card: 0 8px 28px rgba(15, 23, 42, 0.12);
+  }
+}

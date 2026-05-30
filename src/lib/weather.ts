@@ -1,0 +1,98 @@
+import * as Location from 'expo-location';
+
+export type WeatherData = {
+    temperature: number;
+    windSpeed: number;
+    precipitationProbability: number | null;
+    weatherCode: number;
+    weatherDescription: string;
+    time: string;
+    latitude: number;
+    longitude: number;
+};
+
+const OPEN_METEO_URL = 'https://api.open-meteo.com/v1/forecast';
+
+const weatherCodeDescriptions: Record<number, string> = {
+    0: 'Clear sky',
+    1: 'Mainly clear',
+    2: 'Partly cloudy',
+    3: 'Overcast',
+    45: 'Fog',
+    48: 'Depositing rime fog',
+    51: 'Light drizzle',
+    53: 'Moderate drizzle',
+    55: 'Dense drizzle',
+    56: 'Light freezing drizzle',
+    57: 'Dense freezing drizzle',
+    61: 'Slight rain',
+    63: 'Moderate rain',
+    65: 'Heavy rain',
+    66: 'Light freezing rain',
+    67: 'Heavy freezing rain',
+    71: 'Slight snow',
+    73: 'Moderate snow',
+    75: 'Heavy snow',
+    77: 'Snow grains',
+    80: 'Slight rain showers',
+    81: 'Moderate rain showers',
+    82: 'Violent rain showers',
+    85: 'Slight snow showers',
+    86: 'Heavy snow showers',
+    95: 'Thunderstorm',
+    96: 'Thunderstorm with hail',
+    99: 'Severe thunderstorm with hail',
+};
+
+function getWeatherDescription(code: number) {
+    return weatherCodeDescriptions[code] ?? 'Unknown weather';
+}
+
+export async function requestLocationPermissions() {
+    const permission = await Location.requestForegroundPermissionsAsync();
+    return permission.status === Location.PermissionStatus.Granted;
+}
+
+export async function getCurrentLocation() {
+    return Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Highest });
+}
+
+export async function fetchWeatherData(latitude: number, longitude: number): Promise<WeatherData> {
+    const query = new URLSearchParams({
+        latitude: String(latitude),
+        longitude: String(longitude),
+        current_weather: 'true',
+        hourly: 'precipitation_probability',
+        timezone: 'auto',
+    });
+
+    const response = await fetch(`${OPEN_METEO_URL}?${query.toString()}`);
+    if (!response.ok) {
+        throw new Error(`Weather API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    const current = data.current_weather;
+    const hourly = data.hourly;
+
+    if (!current || !hourly) {
+        throw new Error('Unexpected weather response');
+    }
+
+    const timeIndex = hourly.time?.indexOf(current.time);
+    const precipitationProbability =
+        typeof timeIndex === 'number' && timeIndex >= 0
+            ? hourly.precipitation_probability?.[timeIndex] ?? null
+            : null;
+
+    return {
+        temperature: current.temperature,
+        windSpeed: current.windspeed,
+        precipitationProbability,
+        weatherCode: current.weathercode,
+        weatherDescription: getWeatherDescription(current.weathercode),
+        time: current.time,
+        latitude: data.latitude,
+        longitude: data.longitude,
+    };
+}
